@@ -24,25 +24,25 @@ from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.simulation_config')
 
-# 中国作息时间配置（北京时间）
-CHINA_TIMEZONE_CONFIG = {
-    # 深夜时段（几乎无人活动）
+# 日本の生活リズム設定（日本時間）
+JAPAN_TIMEZONE_CONFIG = {
+    # 深夜時間帯（ほぼ活動なし）
     "dead_hours": [0, 1, 2, 3, 4, 5],
-    # 早间时段（逐渐醒来）
+    # 朝の時間帯（徐々に活動開始）
     "morning_hours": [6, 7, 8],
-    # 工作时段
+    # 勤務時間帯
     "work_hours": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
-    # 晚间高峰（最活跃）
+    # 夜のピーク（最も活発）
     "peak_hours": [19, 20, 21, 22],
-    # 夜间时段（活跃度下降）
+    # 夜間時間帯（活動度低下）
     "night_hours": [23],
-    # 活跃度系数
+    # 活動度係数
     "activity_multipliers": {
-        "dead": 0.05,      # 凌晨几乎无人
-        "morning": 0.4,    # 早间逐渐活跃
-        "work": 0.7,       # 工作时段中等
-        "peak": 1.5,       # 晚间高峰
-        "night": 0.5       # 深夜下降
+        "dead": 0.05,      # 深夜はほぼ活動なし
+        "morning": 0.4,    # 朝は徐々に活発化
+        "work": 0.7,       # 勤務時間帯は中程度
+        "peak": 1.5,       # 夜のピーク
+        "night": 0.5       # 深夜は低下
     }
 }
 
@@ -232,7 +232,7 @@ class SimulationConfigGenerator:
         self.model_name = model_name or Config.LLM_MODEL_NAME
         
         if not self.api_key:
-            raise ValueError("LLM_API_KEY 未配置")
+            raise ValueError("LLM_API_KEY が設定されていません")
         
         self.client = OpenAI(
             api_key=self.api_key,
@@ -291,20 +291,20 @@ class SimulationConfigGenerator:
         
         reasoning_parts = []
         
-        # ========== 步骤1: 生成时间配置 ==========
-        report_progress(1, "生成时间配置...")
+        # ========== ステップ1: 時間設定の生成 ==========
+        report_progress(1, "時間設定を生成中...")
         num_entities = len(entities)
         time_config_result = self._generate_time_config(context, num_entities)
         time_config = self._parse_time_config(time_config_result, num_entities)
-        reasoning_parts.append(f"时间配置: {time_config_result.get('reasoning', '成功')}")
-        
-        # ========== 步骤2: 生成事件配置 ==========
-        report_progress(2, "生成事件配置和热点话题...")
+        reasoning_parts.append(f"時間設定: {time_config_result.get('reasoning', '成功')}")
+
+        # ========== ステップ2: イベント設定の生成 ==========
+        report_progress(2, "イベント設定とホットトピックを生成中...")
         event_config_result = self._generate_event_config(context, simulation_requirement, entities)
         event_config = self._parse_event_config(event_config_result)
-        reasoning_parts.append(f"事件配置: {event_config_result.get('reasoning', '成功')}")
-        
-        # ========== 步骤3-N: 分批生成Agent配置 ==========
+        reasoning_parts.append(f"イベント設定: {event_config_result.get('reasoning', '成功')}")
+
+        # ========== ステップ3-N: バッチでAgent設定を生成 ==========
         all_agent_configs = []
         for batch_idx in range(num_batches):
             start_idx = batch_idx * self.AGENTS_PER_BATCH
@@ -313,7 +313,7 @@ class SimulationConfigGenerator:
             
             report_progress(
                 3 + batch_idx,
-                f"生成Agent配置 ({start_idx + 1}-{end_idx}/{len(entities)})..."
+                f"Agent設定を生成中 ({start_idx + 1}-{end_idx}/{len(entities)})..."
             )
             
             batch_configs = self._generate_agent_configs_batch(
@@ -324,16 +324,16 @@ class SimulationConfigGenerator:
             )
             all_agent_configs.extend(batch_configs)
         
-        reasoning_parts.append(f"Agent配置: 成功生成 {len(all_agent_configs)} 个")
+        reasoning_parts.append(f"Agent設定: {len(all_agent_configs)}件を正常に生成")
         
         # ========== 为初始帖子分配发布者 Agent ==========
         logger.info("为初始帖子分配合适的发布者 Agent...")
         event_config = self._assign_initial_post_agents(event_config, all_agent_configs)
         assigned_count = len([p for p in event_config.initial_posts if p.get("poster_agent_id") is not None])
-        reasoning_parts.append(f"初始帖子分配: {assigned_count} 个帖子已分配发布者")
+        reasoning_parts.append(f"初期投稿の割り当て: {assigned_count}件の投稿に投稿者を割り当て済み")
         
-        # ========== 最后一步: 生成平台配置 ==========
-        report_progress(total_steps, "生成平台配置...")
+        # ========== 最終ステップ: プラットフォーム設定の生成 ==========
+        report_progress(total_steps, "プラットフォーム設定を生成中...")
         twitter_config = None
         reddit_config = None
         
@@ -390,8 +390,8 @@ class SimulationConfigGenerator:
         
         # 构建上下文
         context_parts = [
-            f"## 模拟需求\n{simulation_requirement}",
-            f"\n## 实体信息 ({len(entities)}个)\n{entity_summary}",
+            f"## シミュレーション要件\n{simulation_requirement}",
+            f"\n## エンティティ情報 ({len(entities)}件)\n{entity_summary}",
         ]
         
         current_length = sum(len(p) for p in context_parts)
@@ -400,8 +400,8 @@ class SimulationConfigGenerator:
         if remaining_length > 0 and document_text:
             doc_text = document_text[:remaining_length]
             if len(document_text) > remaining_length:
-                doc_text += "\n...(文档已截断)"
-            context_parts.append(f"\n## 原始文档内容\n{doc_text}")
+                doc_text += "\n...(ドキュメントは省略されました)"
+            context_parts.append(f"\n## 原文ドキュメント内容\n{doc_text}")
         
         return "\n".join(context_parts)
     
@@ -418,7 +418,7 @@ class SimulationConfigGenerator:
             by_type[t].append(e)
         
         for entity_type, type_entities in by_type.items():
-            lines.append(f"\n### {entity_type} ({len(type_entities)}个)")
+            lines.append(f"\n### {entity_type} ({len(type_entities)}件)")
             # 使用配置的显示数量和摘要长度
             display_count = self.ENTITIES_PER_TYPE_DISPLAY
             summary_len = self.ENTITY_SUMMARY_LENGTH
@@ -426,7 +426,7 @@ class SimulationConfigGenerator:
                 summary_preview = (e.summary[:summary_len] + "...") if len(e.summary) > summary_len else e.summary
                 lines.append(f"- {e.name}: {summary_preview}")
             if len(type_entities) > display_count:
-                lines.append(f"  ... 还有 {len(type_entities) - display_count} 个")
+                lines.append(f"  ... 他 {len(type_entities) - display_count}件")
         
         return "\n".join(lines)
     
@@ -539,28 +539,28 @@ class SimulationConfigGenerator:
         # 计算最大允许值（80%的agent数）
         max_agents_allowed = max(1, int(num_entities * 0.9))
         
-        prompt = f"""基于以下模拟需求，生成时间模拟配置。
+        prompt = f"""以下のシミュレーション要件に基づき、時間シミュレーション設定を生成してください。
 
 {context_truncated}
 
-## 任务
-请生成时间配置JSON。
+## タスク
+時間設定JSONを生成してください。
 
-### 基本原则（仅供参考，需根据具体事件和参与群体灵活调整）：
-- 用户群体为中国人，需符合北京时间作息习惯
-- 凌晨0-5点几乎无人活动（活跃度系数0.05）
-- 早上6-8点逐渐活跃（活跃度系数0.4）
-- 工作时间9-18点中等活跃（活跃度系数0.7）
-- 晚间19-22点是高峰期（活跃度系数1.5）
-- 23点后活跃度下降（活跃度系数0.5）
-- 一般规律：凌晨低活跃、早间渐增、工作时段中等、晚间高峰
-- **重要**：以下示例值仅供参考，你需要根据事件性质、参与群体特点来调整具体时段
-  - 例如：学生群体高峰可能是21-23点；媒体全天活跃；官方机构只在工作时间
-  - 例如：突发热点可能导致深夜也有讨论，off_peak_hours 可适当缩短
+### 基本原則（参考用。具体的なイベントや参加者グループに応じて柔軟に調整してください）：
+- ユーザー群は日本人であり、日本時間の生活リズムに合わせる必要があります
+- 深夜0-5時はほぼ活動なし（活動度係数0.05）
+- 朝6-8時は徐々に活発化（活動度係数0.4）
+- 勤務時間9-18時は中程度の活動（活動度係数0.7）
+- 夜間19-22時がピーク（活動度係数1.5）
+- 23時以降は活動度低下（活動度係数0.5）
+- 一般的な傾向：深夜は低活動、朝は徐々に増加、勤務時間帯は中程度、夜間がピーク
+- **重要**：以下の例示値は参考です。イベントの性質や参加者グループの特徴に応じて具体的な時間帯を調整してください
+  - 例：学生グループのピークは21-23時の場合がある。メディアは終日活動。公的機関は勤務時間のみ
+  - 例：突発的な話題の場合、深夜でも議論が発生する可能性があり、off_peak_hoursを短縮可能
 
-### 返回JSON格式（不要markdown）
+### JSON形式で返却（markdownは不要）
 
-示例：
+例：
 {{
     "total_simulation_hours": 72,
     "minutes_per_round": 60,
@@ -570,21 +570,21 @@ class SimulationConfigGenerator:
     "off_peak_hours": [0, 1, 2, 3, 4, 5],
     "morning_hours": [6, 7, 8],
     "work_hours": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
-    "reasoning": "针对该事件的时间配置说明"
+    "reasoning": "このイベントに対する時間設定の説明"
 }}
 
-字段说明：
-- total_simulation_hours (int): 模拟总时长，24-168小时，突发事件短、持续话题长
-- minutes_per_round (int): 每轮时长，30-120分钟，建议60分钟
-- agents_per_hour_min (int): 每小时最少激活Agent数（取值范围: 1-{max_agents_allowed}）
-- agents_per_hour_max (int): 每小时最多激活Agent数（取值范围: 1-{max_agents_allowed}）
-- peak_hours (int数组): 高峰时段，根据事件参与群体调整
-- off_peak_hours (int数组): 低谷时段，通常深夜凌晨
-- morning_hours (int数组): 早间时段
-- work_hours (int数组): 工作时段
-- reasoning (string): 简要说明为什么这样配置"""
+フィールド説明：
+- total_simulation_hours (int): シミュレーション総時間、24-168時間。突発イベントは短く、継続的な話題は長く
+- minutes_per_round (int): 1ラウンドの時間、30-120分。60分を推奨
+- agents_per_hour_min (int): 1時間あたりの最小アクティブAgent数（範囲: 1-{max_agents_allowed}）
+- agents_per_hour_max (int): 1時間あたりの最大アクティブAgent数（範囲: 1-{max_agents_allowed}）
+- peak_hours (int配列): ピーク時間帯。イベント参加者グループに応じて調整
+- off_peak_hours (int配列): 閑散時間帯。通常は深夜から早朝
+- morning_hours (int配列): 朝の時間帯
+- work_hours (int配列): 勤務時間帯
+- reasoning (string): この設定にした理由の簡潔な説明"""
 
-        system_prompt = "你是社交媒体模拟专家。返回纯JSON格式，时间配置需符合中国人作息习惯。"
+        system_prompt = "あなたはソーシャルメディアシミュレーションの専門家です。純粋なJSON形式で返却してください。時間設定は日本人の生活リズムに合わせてください。日本語を使用してください。"
         
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
@@ -603,7 +603,7 @@ class SimulationConfigGenerator:
             "off_peak_hours": [0, 1, 2, 3, 4, 5],
             "morning_hours": [6, 7, 8],
             "work_hours": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
-            "reasoning": "使用默认中国人作息配置（每轮1小时）"
+            "reasoning": "デフォルトの日本人生活リズム設定を使用（1ラウンド1時間）"
         }
     
     def _parse_time_config(self, result: Dict[str, Any], num_entities: int) -> TimeSimulationConfig:
@@ -671,36 +671,38 @@ class SimulationConfigGenerator:
         # 使用配置的上下文截断长度
         context_truncated = context[:self.EVENT_CONFIG_CONTEXT_LENGTH]
         
-        prompt = f"""基于以下模拟需求，生成事件配置。
+        prompt = f"""以下のシミュレーション要件に基づき、イベント設定を生成してください。
 
-模拟需求: {simulation_requirement}
+シミュレーション要件: {simulation_requirement}
 
 {context_truncated}
 
-## 可用实体类型及示例
+## 利用可能なエンティティタイプと例
 {type_info}
 
-## 任务
-请生成事件配置JSON：
-- 提取热点话题关键词
-- 描述舆论发展方向
-- 设计初始帖子内容，**每个帖子必须指定 poster_type（发布者类型）**
+## タスク
+イベント設定JSONを生成してください：
+- ホットトピックのキーワードを抽出
+- 世論の展開方向を記述
+- 初期投稿の内容を設計。**各投稿には必ず poster_type（投稿者タイプ）を指定してください**
 
-**重要**: poster_type 必须从上面的"可用实体类型"中选择，这样初始帖子才能分配给合适的 Agent 发布。
-例如：官方声明应由 Official/University 类型发布，新闻由 MediaOutlet 发布，学生观点由 Student 发布。
+**重要**: poster_typeは上記の「利用可能なエンティティタイプ」から選択する必要があります。これにより初期投稿を適切なAgentに割り当てることができます。
+例：公式声明はOfficial/Universityタイプが投稿、ニュースはMediaOutletが投稿、学生の意見はStudentが投稿。
 
-返回JSON格式（不要markdown）：
+**重要**: すべてのコンテンツは日本語で記述してください。
+
+JSON形式で返却（markdownは不要）：
 {{
-    "hot_topics": ["关键词1", "关键词2", ...],
-    "narrative_direction": "<舆论发展方向描述>",
+    "hot_topics": ["キーワード1", "キーワード2", ...],
+    "narrative_direction": "<世論の展開方向の説明>",
     "initial_posts": [
-        {{"content": "帖子内容", "poster_type": "实体类型（必须从可用类型中选择）"}},
+        {{"content": "投稿内容", "poster_type": "エンティティタイプ（利用可能なタイプから選択）"}},
         ...
     ],
-    "reasoning": "<简要说明>"
+    "reasoning": "<簡潔な説明>"
 }}"""
 
-        system_prompt = "你是舆论分析专家。返回纯JSON格式。注意 poster_type 必须精确匹配可用实体类型。"
+        system_prompt = "あなたは世論分析の専門家です。純粋なJSON形式で返却してください。poster_typeは利用可能なエンティティタイプと正確に一致させてください。日本語を使用してください。"
         
         try:
             return self._call_llm_with_retry(prompt, system_prompt)
@@ -710,7 +712,7 @@ class SimulationConfigGenerator:
                 "hot_topics": [],
                 "narrative_direction": "",
                 "initial_posts": [],
-                "reasoning": "使用默认配置"
+                "reasoning": "デフォルト設定を使用"
             }
     
     def _parse_event_config(self, result: Dict[str, Any]) -> EventConfig:
@@ -827,43 +829,43 @@ class SimulationConfigGenerator:
                 "summary": e.summary[:summary_len] if e.summary else ""
             })
         
-        prompt = f"""基于以下信息，为每个实体生成社交媒体活动配置。
+        prompt = f"""以下の情報に基づき、各エンティティのソーシャルメディア活動設定を生成してください。
 
-模拟需求: {simulation_requirement}
+シミュレーション要件: {simulation_requirement}
 
-## 实体列表
+## エンティティリスト
 ```json
 {json.dumps(entity_list, ensure_ascii=False, indent=2)}
 ```
 
-## 任务
-为每个实体生成活动配置，注意：
-- **时间符合中国人作息**：凌晨0-5点几乎不活动，晚间19-22点最活跃
-- **官方机构**（University/GovernmentAgency）：活跃度低(0.1-0.3)，工作时间(9-17)活动，响应慢(60-240分钟)，影响力高(2.5-3.0)
-- **媒体**（MediaOutlet）：活跃度中(0.4-0.6)，全天活动(8-23)，响应快(5-30分钟)，影响力高(2.0-2.5)
-- **个人**（Student/Person/Alumni）：活跃度高(0.6-0.9)，主要晚间活动(18-23)，响应快(1-15分钟)，影响力低(0.8-1.2)
-- **公众人物/专家**：活跃度中(0.4-0.6)，影响力中高(1.5-2.0)
+## タスク
+各エンティティの活動設定を生成してください。注意事項：
+- **時間は日本人の生活リズムに合わせる**：深夜0-5時はほぼ活動なし、夜間19-22時が最も活発
+- **公的機関**（University/GovernmentAgency）：活動度低(0.1-0.3)、勤務時間(9-17)に活動、応答遅い(60-240分)、影響力高(2.5-3.0)
+- **メディア**（MediaOutlet）：活動度中(0.4-0.6)、終日活動(8-23)、応答速い(5-30分)、影響力高(2.0-2.5)
+- **個人**（Student/Person/Alumni）：活動度高(0.6-0.9)、主に夜間活動(18-23)、応答速い(1-15分)、影響力低(0.8-1.2)
+- **著名人/専門家**：活動度中(0.4-0.6)、影響力中高(1.5-2.0)
 
-返回JSON格式（不要markdown）：
+JSON形式で返却（markdownは不要）：
 {{
     "agent_configs": [
         {{
-            "agent_id": <必须与输入一致>,
+            "agent_id": <入力と一致させること>,
             "activity_level": <0.0-1.0>,
-            "posts_per_hour": <发帖频率>,
-            "comments_per_hour": <评论频率>,
-            "active_hours": [<活跃小时列表，考虑中国人作息>],
-            "response_delay_min": <最小响应延迟分钟>,
-            "response_delay_max": <最大响应延迟分钟>,
-            "sentiment_bias": <-1.0到1.0>,
+            "posts_per_hour": <投稿頻度>,
+            "comments_per_hour": <コメント頻度>,
+            "active_hours": [<アクティブ時間リスト、日本人の生活リズムを考慮>],
+            "response_delay_min": <最小応答遅延（分）>,
+            "response_delay_max": <最大応答遅延（分）>,
+            "sentiment_bias": <-1.0から1.0>,
             "stance": "<supportive/opposing/neutral/observer>",
-            "influence_weight": <影响力权重>
+            "influence_weight": <影響力の重み>
         }},
         ...
     ]
 }}"""
 
-        system_prompt = "你是社交媒体行为分析专家。返回纯JSON，配置需符合中国人作息习惯。"
+        system_prompt = "あなたはソーシャルメディア行動分析の専門家です。純粋なJSON形式で返却してください。設定は日本人の生活リズムに合わせてください。日本語を使用してください。"
         
         try:
             result = self._call_llm_with_retry(prompt, system_prompt)

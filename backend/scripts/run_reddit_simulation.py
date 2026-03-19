@@ -126,8 +126,8 @@ try:
         generate_reddit_agent_graph
     )
 except ImportError as e:
-    print(f"错误: 缺少依赖 {e}")
-    print("请先安装: pip install oasis-ai camel-ai")
+    print(f"エラー: 依存関係が不足しています {e}")
+    print("先にインストールしてください: pip install oasis-ai camel-ai")
     sys.exit(1)
 
 
@@ -236,12 +236,12 @@ class IPCHandler:
             result = self._get_interview_result(agent_id)
             
             self.send_response(command_id, "completed", result=result)
-            print(f"  Interview完成: agent_id={agent_id}")
+            print(f"  Interview完了: agent_id={agent_id}")
             return True
-            
+
         except Exception as e:
             error_msg = str(e)
-            print(f"  Interview失败: agent_id={agent_id}, error={error_msg}")
+            print(f"  Interview失敗: agent_id={agent_id}, error={error_msg}")
             self.send_response(command_id, "failed", error=error_msg)
             return False
     
@@ -269,10 +269,10 @@ class IPCHandler:
                     )
                     agent_prompts[agent_id] = prompt
                 except Exception as e:
-                    print(f"  警告: 无法获取Agent {agent_id}: {e}")
-            
+                    print(f"  警告: Agent {agent_id} を取得できません: {e}")
+
             if not actions:
-                self.send_response(command_id, "failed", error="没有有效的Agent")
+                self.send_response(command_id, "failed", error="有効なAgentがありません")
                 return False
             
             # 执行批量Interview
@@ -288,12 +288,12 @@ class IPCHandler:
                 "interviews_count": len(results),
                 "results": results
             })
-            print(f"  批量Interview完成: {len(results)} 个Agent")
+            print(f"  バッチInterview完了: {len(results)} 個のAgent")
             return True
-            
+
         except Exception as e:
             error_msg = str(e)
-            print(f"  批量Interview失败: {error_msg}")
+            print(f"  バッチInterview失敗: {error_msg}")
             self.send_response(command_id, "failed", error=error_msg)
             return False
     
@@ -336,7 +336,7 @@ class IPCHandler:
             conn.close()
             
         except Exception as e:
-            print(f"  读取Interview结果失败: {e}")
+            print(f"  Interview結果の読み取り失敗: {e}")
         
         return result
     
@@ -355,8 +355,8 @@ class IPCHandler:
         command_type = command.get("command_type")
         args = command.get("args", {})
         
-        print(f"\n收到IPC命令: {command_type}, id={command_id}")
-        
+        print(f"\nIPCコマンドを受信: {command_type}, id={command_id}")
+
         if command_type == CommandType.INTERVIEW:
             await self.handle_interview(
                 command_id,
@@ -364,21 +364,21 @@ class IPCHandler:
                 args.get("prompt", "")
             )
             return True
-            
+
         elif command_type == CommandType.BATCH_INTERVIEW:
             await self.handle_batch_interview(
                 command_id,
                 args.get("interviews", [])
             )
             return True
-            
+
         elif command_type == CommandType.CLOSE_ENV:
-            print("收到关闭环境命令")
-            self.send_response(command_id, "completed", result={"message": "环境即将关闭"})
+            print("環境終了コマンドを受信")
+            self.send_response(command_id, "completed", result={"message": "環境をまもなく終了します"})
             return False
-        
+
         else:
-            self.send_response(command_id, "failed", error=f"未知命令类型: {command_type}")
+            self.send_response(command_id, "failed", error=f"不明なコマンドタイプ: {command_type}")
             return True
 
 
@@ -454,12 +454,12 @@ class RedditSimulationRunner:
             os.environ["OPENAI_API_KEY"] = llm_api_key
         
         if not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError("缺少 API Key 配置，请在项目根目录 .env 文件中设置 LLM_API_KEY")
-        
+            raise ValueError("API Key設定がありません。プロジェクトルートの .env ファイルに LLM_API_KEY を設定してください")
+
         if llm_base_url:
             os.environ["OPENAI_API_BASE_URL"] = llm_base_url
-        
-        print(f"LLM配置: model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
+
+        print(f"LLM設定: model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else 'デフォルト'}...")
         
         return ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
@@ -527,10 +527,10 @@ class RedditSimulationRunner:
             max_rounds: 最大模拟轮数（可选，用于截断过长的模拟）
         """
         print("=" * 60)
-        print("OASIS Reddit模拟")
-        print(f"配置文件: {self.config_path}")
-        print(f"模拟ID: {self.config.get('simulation_id', 'unknown')}")
-        print(f"等待命令模式: {'启用' if self.wait_for_commands else '禁用'}")
+        print("OASIS Redditシミュレーション")
+        print(f"設定ファイル: {self.config_path}")
+        print(f"シミュレーションID: {self.config.get('simulation_id', 'unknown')}")
+        print(f"コマンド待機モード: {'有効' if self.wait_for_commands else '無効'}")
         print("=" * 60)
         
         time_config = self.config.get("time_config", {})
@@ -543,23 +543,23 @@ class RedditSimulationRunner:
             original_rounds = total_rounds
             total_rounds = min(total_rounds, max_rounds)
             if total_rounds < original_rounds:
-                print(f"\n轮数已截断: {original_rounds} -> {total_rounds} (max_rounds={max_rounds})")
-        
-        print(f"\n模拟参数:")
-        print(f"  - 总模拟时长: {total_hours}小时")
-        print(f"  - 每轮时间: {minutes_per_round}分钟")
-        print(f"  - 总轮数: {total_rounds}")
+                print(f"\nラウンド数を切り詰めました: {original_rounds} -> {total_rounds} (max_rounds={max_rounds})")
+
+        print(f"\nシミュレーションパラメータ:")
+        print(f"  - 総シミュレーション時間: {total_hours}時間")
+        print(f"  - ラウンドあたりの時間: {minutes_per_round}分")
+        print(f"  - 総ラウンド数: {total_rounds}")
         if max_rounds:
-            print(f"  - 最大轮数限制: {max_rounds}")
-        print(f"  - Agent数量: {len(self.config.get('agent_configs', []))}")
+            print(f"  - 最大ラウンド数制限: {max_rounds}")
+        print(f"  - Agent数: {len(self.config.get('agent_configs', []))}")
         
-        print("\n初始化LLM模型...")
+        print("\nLLMモデルを初期化中...")
         model = self._create_model()
-        
-        print("加载Agent Profile...")
+
+        print("Agent Profileを読み込み中...")
         profile_path = self._get_profile_path()
         if not os.path.exists(profile_path):
-            print(f"错误: Profile文件不存在: {profile_path}")
+            print(f"エラー: Profileファイルが存在しません: {profile_path}")
             return
         
         self.agent_graph = await generate_reddit_agent_graph(
@@ -571,9 +571,9 @@ class RedditSimulationRunner:
         db_path = self._get_db_path()
         if os.path.exists(db_path):
             os.remove(db_path)
-            print(f"已删除旧数据库: {db_path}")
-        
-        print("创建OASIS环境...")
+            print(f"古いデータベースを削除しました: {db_path}")
+
+        print("OASIS環境を作成中...")
         self.env = oasis.make(
             agent_graph=self.agent_graph,
             platform=oasis.DefaultPlatformType.REDDIT,
@@ -582,7 +582,7 @@ class RedditSimulationRunner:
         )
         
         await self.env.reset()
-        print("环境初始化完成\n")
+        print("環境の初期化が完了しました\n")
         
         # 初始化IPC处理器
         self.ipc_handler = IPCHandler(self.simulation_dir, self.env, self.agent_graph)
@@ -593,7 +593,7 @@ class RedditSimulationRunner:
         initial_posts = event_config.get("initial_posts", [])
         
         if initial_posts:
-            print(f"执行初始事件 ({len(initial_posts)}条初始帖子)...")
+            print(f"初期イベントを実行中 ({len(initial_posts)}件の初期投稿)...")
             initial_actions = {}
             for post in initial_posts:
                 agent_id = post.get("poster_agent_id", 0)
@@ -613,14 +613,14 @@ class RedditSimulationRunner:
                             action_args={"content": content}
                         )
                 except Exception as e:
-                    print(f"  警告: 无法为Agent {agent_id}创建初始帖子: {e}")
-            
+                    print(f"  警告: Agent {agent_id} の初期投稿を作成できません: {e}")
+
             if initial_actions:
                 await self.env.step(initial_actions)
-                print(f"  已发布 {len(initial_actions)} 条初始帖子")
+                print(f"  {len(initial_actions)} 件の初期投稿を公開しました")
         
         # 主模拟循环
-        print("\n开始模拟循环...")
+        print("\nシミュレーションループを開始...")
         start_time = datetime.now()
         
         for round_num in range(total_rounds):
@@ -651,15 +651,15 @@ class RedditSimulationRunner:
                       f"- elapsed: {elapsed:.1f}s")
         
         total_elapsed = (datetime.now() - start_time).total_seconds()
-        print(f"\n模拟循环完成!")
-        print(f"  - 总耗时: {total_elapsed:.1f}秒")
-        print(f"  - 数据库: {db_path}")
-        
+        print(f"\nシミュレーションループ完了!")
+        print(f"  - 総所要時間: {total_elapsed:.1f}秒")
+        print(f"  - データベース: {db_path}")
+
         # 是否进入等待命令模式
         if self.wait_for_commands:
             print("\n" + "=" * 60)
-            print("进入等待命令模式 - 环境保持运行")
-            print("支持的命令: interview, batch_interview, close_env")
+            print("コマンド待機モードに入ります - 環境は動作を継続")
+            print("対応コマンド: interview, batch_interview, close_env")
             print("=" * 60)
             
             self.ipc_handler.update_status("alive")
@@ -676,19 +676,19 @@ class RedditSimulationRunner:
                     except asyncio.TimeoutError:
                         pass
             except KeyboardInterrupt:
-                print("\n收到中断信号")
+                print("\n中断シグナルを受信")
             except asyncio.CancelledError:
-                print("\n任务被取消")
+                print("\nタスクがキャンセルされました")
             except Exception as e:
-                print(f"\n命令处理出错: {e}")
-            
-            print("\n关闭环境...")
+                print(f"\nコマンド処理エラー: {e}")
+
+            print("\n環境を終了中...")
         
         # 关闭环境
         self.ipc_handler.update_status("stopped")
         await self.env.close()
         
-        print("环境已关闭")
+        print("環境を終了しました")
         print("=" * 60)
 
 
@@ -720,7 +720,7 @@ async def main():
     _shutdown_event = asyncio.Event()
     
     if not os.path.exists(args.config):
-        print(f"错误: 配置文件不存在: {args.config}")
+        print(f"エラー: 設定ファイルが存在しません: {args.config}")
         sys.exit(1)
     
     # 初始化日志配置（使用固定文件名，清理旧日志）
@@ -742,14 +742,14 @@ def setup_signal_handlers():
     def signal_handler(signum, frame):
         global _cleanup_done
         sig_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
-        print(f"\n收到 {sig_name} 信号，正在退出...")
+        print(f"\n{sig_name} シグナルを受信、終了中...")
         if not _cleanup_done:
             _cleanup_done = True
             if _shutdown_event:
                 _shutdown_event.set()
         else:
             # 重复收到信号才强制退出
-            print("强制退出...")
+            print("強制終了...")
             sys.exit(1)
     
     signal.signal(signal.SIGTERM, signal_handler)
@@ -761,9 +761,9 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n程序被中断")
+        print("\nプログラムが中断されました")
     except SystemExit:
         pass
     finally:
-        print("模拟进程已退出")
+        print("シミュレーションプロセスが終了しました")
 

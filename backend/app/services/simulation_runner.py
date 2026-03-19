@@ -333,14 +333,14 @@ class SimulationRunner:
         # 检查是否已在运行
         existing = cls.get_run_state(simulation_id)
         if existing and existing.runner_status in [RunnerStatus.RUNNING, RunnerStatus.STARTING]:
-            raise ValueError(f"模拟已在运行中: {simulation_id}")
+            raise ValueError(f"シミュレーションは既に実行中です: {simulation_id}")
         
         # 加载模拟配置
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         config_path = os.path.join(sim_dir, "simulation_config.json")
         
         if not os.path.exists(config_path):
-            raise ValueError(f"模拟配置不存在，请先调用 /prepare 接口")
+            raise ValueError(f"シミュレーション設定が存在しません。先に /prepare APIを呼び出してください")
         
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
@@ -371,7 +371,7 @@ class SimulationRunner:
         # 如果启用图谱记忆更新，创建更新器
         if enable_graph_memory_update:
             if not graph_id:
-                raise ValueError("启用图谱记忆更新时必须提供 graph_id")
+                raise ValueError("グラフメモリ更新を有効にする場合は graph_id を指定する必要があります")
             
             try:
                 ZepGraphMemoryManager.create_updater(simulation_id, graph_id)
@@ -398,7 +398,7 @@ class SimulationRunner:
         script_path = os.path.join(cls.SCRIPTS_DIR, script_name)
         
         if not os.path.exists(script_path):
-            raise ValueError(f"脚本不存在: {script_path}")
+            raise ValueError(f"スクリプトが存在しません: {script_path}")
         
         # 创建动作队列
         action_queue = Queue()
@@ -534,7 +534,7 @@ class SimulationRunner:
                             error_info = f.read()[-2000:]  # 取最后2000字符
                 except Exception:
                     pass
-                state.error = f"进程退出码: {exit_code}, 错误: {error_info}"
+                state.error = f"プロセス終了コード: {exit_code}, エラー: {error_info}"
                 logger.error(f"模拟失败: {simulation_id}, error={state.error}")
             
             state.twitter_running = False
@@ -773,10 +773,10 @@ class SimulationRunner:
         """停止模拟"""
         state = cls.get_run_state(simulation_id)
         if not state:
-            raise ValueError(f"模拟不存在: {simulation_id}")
-        
+            raise ValueError(f"シミュレーションが存在しません: {simulation_id}")
+
         if state.runner_status not in [RunnerStatus.RUNNING, RunnerStatus.PAUSED]:
-            raise ValueError(f"模拟未在运行: {simulation_id}, status={state.runner_status}")
+            raise ValueError(f"シミュレーションは実行されていません: {simulation_id}, status={state.runner_status}")
         
         state.runner_status = RunnerStatus.STOPPING
         cls._save_run_state(state)
@@ -1122,7 +1122,7 @@ class SimulationRunner:
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         
         if not os.path.exists(sim_dir):
-            return {"success": True, "message": "模拟目录不存在，无需清理"}
+            return {"success": True, "message": "シミュレーションディレクトリが存在しません。クリーンアップ不要です"}
         
         cleaned_files = []
         errors = []
@@ -1232,7 +1232,7 @@ class SimulationRunner:
                         state.twitter_running = False
                         state.reddit_running = False
                         state.completed_at = datetime.now().isoformat()
-                        state.error = "服务器关闭，模拟被终止"
+                        state.error = "サーバーシャットダウンにより、シミュレーションが終了されました"
                         cls._save_run_state(state)
                     
                     # 同时更新 state.json，将状态设为 stopped
@@ -1450,14 +1450,14 @@ class SimulationRunner:
         """
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         if not os.path.exists(sim_dir):
-            raise ValueError(f"模拟不存在: {simulation_id}")
+            raise ValueError(f"シミュレーションが存在しません: {simulation_id}")
 
         ipc_client = SimulationIPCClient(sim_dir)
 
         if not ipc_client.check_env_alive():
-            raise ValueError(f"模拟环境未运行或已关闭，无法执行Interview: {simulation_id}")
+            raise ValueError(f"シミュレーション環境が実行されていないか、既に終了しています。Interviewを実行できません: {simulation_id}")
 
-        logger.info(f"发送Interview命令: simulation_id={simulation_id}, agent_id={agent_id}, platform={platform}")
+        logger.info(f"Interviewコマンドを送信: simulation_id={simulation_id}, agent_id={agent_id}, platform={platform}")
 
         response = ipc_client.send_interview(
             agent_id=agent_id,
@@ -1512,14 +1512,14 @@ class SimulationRunner:
         """
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         if not os.path.exists(sim_dir):
-            raise ValueError(f"模拟不存在: {simulation_id}")
+            raise ValueError(f"シミュレーションが存在しません: {simulation_id}")
 
         ipc_client = SimulationIPCClient(sim_dir)
 
         if not ipc_client.check_env_alive():
-            raise ValueError(f"模拟环境未运行或已关闭，无法执行Interview: {simulation_id}")
+            raise ValueError(f"シミュレーション環境が実行されていないか、既に終了しています。Interviewを実行できません: {simulation_id}")
 
-        logger.info(f"发送批量Interview命令: simulation_id={simulation_id}, count={len(interviews)}, platform={platform}")
+        logger.info(f"バッチInterviewコマンドを送信: simulation_id={simulation_id}, count={len(interviews)}, platform={platform}")
 
         response = ipc_client.send_batch_interview(
             interviews=interviews,
@@ -1569,19 +1569,19 @@ class SimulationRunner:
         """
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         if not os.path.exists(sim_dir):
-            raise ValueError(f"模拟不存在: {simulation_id}")
+            raise ValueError(f"シミュレーションが存在しません: {simulation_id}")
 
         # 从配置文件获取所有Agent信息
         config_path = os.path.join(sim_dir, "simulation_config.json")
         if not os.path.exists(config_path):
-            raise ValueError(f"模拟配置不存在: {simulation_id}")
+            raise ValueError(f"シミュレーション設定が存在しません: {simulation_id}")
 
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
 
         agent_configs = config.get("agent_configs", [])
         if not agent_configs:
-            raise ValueError(f"模拟配置中没有Agent: {simulation_id}")
+            raise ValueError(f"シミュレーション設定にAgentがありません: {simulation_id}")
 
         # 构建批量采访列表
         interviews = []
@@ -1593,7 +1593,7 @@ class SimulationRunner:
                     "prompt": prompt
                 })
 
-        logger.info(f"发送全局Interview命令: simulation_id={simulation_id}, agent_count={len(interviews)}, platform={platform}")
+        logger.info(f"グローバルInterviewコマンドを送信: simulation_id={simulation_id}, agent_count={len(interviews)}, platform={platform}")
 
         return cls.interview_agents_batch(
             simulation_id=simulation_id,
@@ -1622,24 +1622,24 @@ class SimulationRunner:
         """
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
         if not os.path.exists(sim_dir):
-            raise ValueError(f"模拟不存在: {simulation_id}")
-        
+            raise ValueError(f"シミュレーションが存在しません: {simulation_id}")
+
         ipc_client = SimulationIPCClient(sim_dir)
-        
+
         if not ipc_client.check_env_alive():
             return {
                 "success": True,
-                "message": "环境已经关闭"
+                "message": "環境は既に終了しています"
             }
-        
-        logger.info(f"发送关闭环境命令: simulation_id={simulation_id}")
-        
+
+        logger.info(f"環境終了コマンドを送信: simulation_id={simulation_id}")
+
         try:
             response = ipc_client.send_close_env(timeout=timeout)
-            
+
             return {
                 "success": response.status.value == "completed",
-                "message": "环境关闭命令已发送",
+                "message": "環境終了コマンドを送信しました",
                 "result": response.result,
                 "timestamp": response.timestamp
             }
@@ -1647,7 +1647,7 @@ class SimulationRunner:
             # 超时可能是因为环境正在关闭
             return {
                 "success": True,
-                "message": "环境关闭命令已发送（等待响应超时，环境可能正在关闭）"
+                "message": "環境終了コマンドを送信しました（応答待ちタイムアウト、環境は終了処理中の可能性があります）"
             }
     
     @classmethod

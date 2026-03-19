@@ -53,9 +53,9 @@ def generate_report():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
-        
+
         force_regenerate = data.get('force_regenerate', False)
         
         # 获取模拟信息
@@ -65,7 +65,7 @@ def generate_report():
         if not state:
             return jsonify({
                 "success": False,
-                "error": f"模拟不存在: {simulation_id}"
+                "error": f"シミュレーションが存在しません: {simulation_id}"
             }), 404
         
         # 检查是否已有报告
@@ -78,7 +78,7 @@ def generate_report():
                         "simulation_id": simulation_id,
                         "report_id": existing_report.report_id,
                         "status": "completed",
-                        "message": "报告已存在",
+                        "message": "レポートは既に存在します",
                         "already_generated": True
                     }
                 })
@@ -88,21 +88,21 @@ def generate_report():
         if not project:
             return jsonify({
                 "success": False,
-                "error": f"项目不存在: {state.project_id}"
+                "error": f"プロジェクトが存在しません: {state.project_id}"
             }), 404
-        
+
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
             return jsonify({
                 "success": False,
-                "error": "缺少图谱ID，请确保已构建图谱"
+                "error": "グラフIDがありません。グラフが構築済みであることを確認してください"
             }), 400
         
         simulation_requirement = project.simulation_requirement
         if not simulation_requirement:
             return jsonify({
                 "success": False,
-                "error": "缺少模拟需求描述"
+                "error": "シミュレーション要件の説明がありません"
             }), 400
         
         # 提前生成 report_id，以便立即返回给前端
@@ -127,7 +127,7 @@ def generate_report():
                     task_id,
                     status=TaskStatus.PROCESSING,
                     progress=0,
-                    message="初始化Report Agent..."
+                    message="Report Agentを初期化中..."
                 )
                 
                 # 创建Report Agent
@@ -164,10 +164,10 @@ def generate_report():
                         }
                     )
                 else:
-                    task_manager.fail_task(task_id, report.error or "报告生成失败")
+                    task_manager.fail_task(task_id, report.error or "レポート生成に失敗しました")
                 
             except Exception as e:
-                logger.error(f"报告生成失败: {str(e)}")
+                logger.error(f"レポート生成失敗: {str(e)}")
                 task_manager.fail_task(task_id, str(e))
         
         # 启动后台线程
@@ -181,13 +181,13 @@ def generate_report():
                 "report_id": report_id,
                 "task_id": task_id,
                 "status": "generating",
-                "message": "报告生成任务已启动，请通过 /api/report/generate/status 查询进度",
+                "message": "レポート生成タスクを開始しました。/api/report/generate/status で進捗を確認してください",
                 "already_generated": False
             }
         })
         
     except Exception as e:
-        logger.error(f"启动报告生成任务失败: {str(e)}")
+        logger.error(f"レポート生成タスクの開始に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -234,7 +234,7 @@ def get_generate_status():
                         "report_id": existing_report.report_id,
                         "status": "completed",
                         "progress": 100,
-                        "message": "报告已生成",
+                        "message": "レポートは生成済みです",
                         "already_completed": True
                     }
                 })
@@ -242,7 +242,7 @@ def get_generate_status():
         if not task_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 task_id 或 simulation_id"
+                "error": "task_id または simulation_id を指定してください"
             }), 400
         
         task_manager = TaskManager()
@@ -251,7 +251,7 @@ def get_generate_status():
         if not task:
             return jsonify({
                 "success": False,
-                "error": f"任务不存在: {task_id}"
+                "error": f"タスクが存在しません: {task_id}"
             }), 404
         
         return jsonify({
@@ -260,7 +260,7 @@ def get_generate_status():
         })
         
     except Exception as e:
-        logger.error(f"查询任务状态失败: {str(e)}")
+        logger.error(f"タスク状態の取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e)
@@ -294,16 +294,16 @@ def get_report(report_id: str):
         if not report:
             return jsonify({
                 "success": False,
-                "error": f"报告不存在: {report_id}"
+                "error": f"レポートが存在しません: {report_id}"
             }), 404
-        
+
         return jsonify({
             "success": True,
             "data": report.to_dict()
         })
-        
+
     except Exception as e:
-        logger.error(f"获取报告失败: {str(e)}")
+        logger.error(f"レポートの取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -331,7 +331,7 @@ def get_report_by_simulation(simulation_id: str):
         if not report:
             return jsonify({
                 "success": False,
-                "error": f"该模拟暂无报告: {simulation_id}",
+                "error": f"このシミュレーションにはまだレポートがありません: {simulation_id}",
                 "has_report": False
             }), 404
         
@@ -342,7 +342,7 @@ def get_report_by_simulation(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取报告失败: {str(e)}")
+        logger.error(f"レポートの取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -382,7 +382,7 @@ def list_reports():
         })
         
     except Exception as e:
-        logger.error(f"列出报告失败: {str(e)}")
+        logger.error(f"レポート一覧の取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -403,9 +403,9 @@ def download_report(report_id: str):
         if not report:
             return jsonify({
                 "success": False,
-                "error": f"报告不存在: {report_id}"
+                "error": f"レポートが存在しません: {report_id}"
             }), 404
-        
+
         md_path = ReportManager._get_report_markdown_path(report_id)
         
         if not os.path.exists(md_path):
@@ -428,7 +428,7 @@ def download_report(report_id: str):
         )
         
     except Exception as e:
-        logger.error(f"下载报告失败: {str(e)}")
+        logger.error(f"レポートのダウンロードに失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -445,16 +445,16 @@ def delete_report(report_id: str):
         if not success:
             return jsonify({
                 "success": False,
-                "error": f"报告不存在: {report_id}"
+                "error": f"レポートが存在しません: {report_id}"
             }), 404
-        
+
         return jsonify({
             "success": True,
-            "message": f"报告已删除: {report_id}"
+            "message": f"レポートを削除しました: {report_id}"
         })
         
     except Exception as e:
-        logger.error(f"删除报告失败: {str(e)}")
+        logger.error(f"レポートの削除に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -474,7 +474,7 @@ def chat_with_report_agent():
     请求（JSON）：
         {
             "simulation_id": "sim_xxxx",        // 必填，模拟ID
-            "message": "请解释一下舆情走向",    // 必填，用户消息
+            "message": "世論の動向を説明してください",    // 必填，用户消息
             "chat_history": [                   // 可选，对话历史
                 {"role": "user", "content": "..."},
                 {"role": "assistant", "content": "..."}
@@ -501,13 +501,13 @@ def chat_with_report_agent():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
-        
+
         if not message:
             return jsonify({
                 "success": False,
-                "error": "请提供 message"
+                "error": "message を指定してください"
             }), 400
         
         # 获取模拟和项目信息
@@ -517,21 +517,21 @@ def chat_with_report_agent():
         if not state:
             return jsonify({
                 "success": False,
-                "error": f"模拟不存在: {simulation_id}"
+                "error": f"シミュレーションが存在しません: {simulation_id}"
             }), 404
-        
+
         project = ProjectManager.get_project(state.project_id)
         if not project:
             return jsonify({
                 "success": False,
-                "error": f"项目不存在: {state.project_id}"
+                "error": f"プロジェクトが存在しません: {state.project_id}"
             }), 404
-        
+
         graph_id = state.graph_id or project.graph_id
         if not graph_id:
             return jsonify({
                 "success": False,
-                "error": "缺少图谱ID"
+                "error": "グラフIDがありません"
             }), 400
         
         simulation_requirement = project.simulation_requirement or ""
@@ -551,7 +551,7 @@ def chat_with_report_agent():
         })
         
     except Exception as e:
-        logger.error(f"对话失败: {str(e)}")
+        logger.error(f"チャットに失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -585,7 +585,7 @@ def get_report_progress(report_id: str):
         if not progress:
             return jsonify({
                 "success": False,
-                "error": f"报告不存在或进度信息不可用: {report_id}"
+                "error": f"レポートが存在しないか進捗情報が利用できません: {report_id}"
             }), 404
         
         return jsonify({
@@ -594,7 +594,7 @@ def get_report_progress(report_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取报告进度失败: {str(e)}")
+        logger.error(f"レポート進捗の取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -645,7 +645,7 @@ def get_report_sections(report_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取章节列表失败: {str(e)}")
+        logger.error(f"セクション一覧の取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -673,7 +673,7 @@ def get_single_section(report_id: str, section_index: int):
         if not os.path.exists(section_path):
             return jsonify({
                 "success": False,
-                "error": f"章节不存在: section_{section_index:02d}.md"
+                "error": f"セクションが存在しません: section_{section_index:02d}.md"
             }), 404
         
         with open(section_path, 'r', encoding='utf-8') as f:
@@ -689,7 +689,7 @@ def get_single_section(report_id: str, section_index: int):
         })
         
     except Exception as e:
-        logger.error(f"获取章节内容失败: {str(e)}")
+        logger.error(f"セクション内容の取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -740,7 +740,7 @@ def check_report_status(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"检查报告状态失败: {str(e)}")
+        logger.error(f"レポート状態の確認に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -801,7 +801,7 @@ def get_agent_log(report_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取Agent日志失败: {str(e)}")
+        logger.error(f"Agentログの取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -835,7 +835,7 @@ def stream_agent_log(report_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取Agent日志失败: {str(e)}")
+        logger.error(f"Agentログの取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -883,7 +883,7 @@ def get_console_log(report_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取控制台日志失败: {str(e)}")
+        logger.error(f"コンソールログの取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -917,7 +917,7 @@ def stream_console_log(report_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取控制台日志失败: {str(e)}")
+        logger.error(f"コンソールログの取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -949,7 +949,7 @@ def search_graph_tool():
         if not graph_id or not query:
             return jsonify({
                 "success": False,
-                "error": "请提供 graph_id 和 query"
+                "error": "graph_id と query を指定してください"
             }), 400
         
         from ..services.zep_tools import ZepToolsService
@@ -967,7 +967,7 @@ def search_graph_tool():
         })
         
     except Exception as e:
-        logger.error(f"图谱搜索失败: {str(e)}")
+        logger.error(f"グラフ検索に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
@@ -993,7 +993,7 @@ def get_graph_statistics_tool():
         if not graph_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 graph_id"
+                "error": "graph_id を指定してください"
             }), 400
         
         from ..services.zep_tools import ZepToolsService
@@ -1007,7 +1007,7 @@ def get_graph_statistics_tool():
         })
         
     except Exception as e:
-        logger.error(f"获取图谱统计失败: {str(e)}")
+        logger.error(f"グラフ統計の取得に失敗: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),

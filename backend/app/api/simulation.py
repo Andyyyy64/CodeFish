@@ -21,7 +21,7 @@ logger = get_logger('mirofish.api.simulation')
 
 # Interview prompt 优化前缀
 # 添加此前缀可以避免Agent调用工具，直接用文本回复
-INTERVIEW_PROMPT_PREFIX = "结合你的人设、所有的过往记忆与行动，不调用任何工具直接用文本回复我："
+INTERVIEW_PROMPT_PREFIX = "あなたのキャラクター設定、すべての過去の記憶と行動を踏まえて、ツールを一切呼び出さずにテキストで直接回答してください："
 
 
 def optimize_interview_prompt(prompt: str) -> str:
@@ -59,7 +59,7 @@ def get_graph_entities(graph_id: str):
         if not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY未配置"
+                "error": "ZEP_API_KEYが設定されていません"
             }), 500
         
         entity_types_str = request.args.get('entity_types', '')
@@ -96,7 +96,7 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
         if not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY未配置"
+                "error": "ZEP_API_KEYが設定されていません"
             }), 500
         
         reader = ZepEntityReader()
@@ -105,7 +105,7 @@ def get_entity_detail(graph_id: str, entity_uuid: str):
         if not entity:
             return jsonify({
                 "success": False,
-                "error": f"实体不存在: {entity_uuid}"
+                "error": f"エンティティが存在しません: {entity_uuid}"
             }), 404
         
         return jsonify({
@@ -129,7 +129,7 @@ def get_entities_by_type(graph_id: str, entity_type: str):
         if not Config.ZEP_API_KEY:
             return jsonify({
                 "success": False,
-                "error": "ZEP_API_KEY未配置"
+                "error": "ZEP_API_KEYが設定されていません"
             }), 500
         
         enrich = request.args.get('enrich', 'true').lower() == 'true'
@@ -197,21 +197,21 @@ def create_simulation():
         if not project_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 project_id"
+                "error": "project_id を指定してください"
             }), 400
-        
+
         project = ProjectManager.get_project(project_id)
         if not project:
             return jsonify({
                 "success": False,
-                "error": f"项目不存在: {project_id}"
+                "error": f"プロジェクトが存在しません: {project_id}"
             }), 404
-        
+
         graph_id = data.get('graph_id') or project.graph_id
         if not graph_id:
             return jsonify({
                 "success": False,
-                "error": "项目尚未构建图谱，请先调用 /api/graph/build"
+                "error": "プロジェクトのグラフがまだ構築されていません。先に /api/graph/build を呼び出してください"
             }), 400
         
         manager = SimulationManager()
@@ -259,7 +259,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     
     # 检查目录是否存在
     if not os.path.exists(simulation_dir):
-        return False, {"reason": "模拟目录不存在"}
+        return False, {"reason": "シミュレーションディレクトリが存在しません"}
     
     # 必要文件列表（不包括脚本，脚本位于 backend/scripts/）
     required_files = [
@@ -281,7 +281,7 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
     
     if missing_files:
         return False, {
-            "reason": "缺少必要文件",
+            "reason": "必要なファイルが不足しています",
             "missing_files": missing_files,
             "existing_files": existing_files
         }
@@ -346,13 +346,13 @@ def _check_simulation_prepared(simulation_id: str) -> tuple:
         else:
             logger.warning(f"模拟 {simulation_id} 检测结果: 未准备完成 (status={status}, config_generated={config_generated})")
             return False, {
-                "reason": f"状态不在已准备列表中或config_generated为false: status={status}, config_generated={config_generated}",
+                "reason": f"ステータスが準備完了リストに含まれていないか、config_generatedがfalseです: status={status}, config_generated={config_generated}",
                 "status": status,
                 "config_generated": config_generated
             }
             
     except Exception as e:
-        return False, {"reason": f"读取状态文件失败: {str(e)}"}
+        return False, {"reason": f"状態ファイルの読み込みに失敗しました: {str(e)}"}
 
 
 @simulation_bp.route('/prepare', methods=['POST'])
@@ -408,21 +408,21 @@ def prepare_simulation():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
-        
+
         manager = SimulationManager()
         state = manager.get_simulation(simulation_id)
-        
+
         if not state:
             return jsonify({
                 "success": False,
-                "error": f"模拟不存在: {simulation_id}"
+                "error": f"シミュレーションが存在しません: {simulation_id}"
             }), 404
-        
+
         # 检查是否强制重新生成
         force_regenerate = data.get('force_regenerate', False)
-        logger.info(f"开始处理 /prepare 请求: simulation_id={simulation_id}, force_regenerate={force_regenerate}")
+        logger.info(f"/prepare リクエストの処理を開始: simulation_id={simulation_id}, force_regenerate={force_regenerate}")
         
         # 检查是否已经准备完成（避免重复生成）
         if not force_regenerate:
@@ -436,7 +436,7 @@ def prepare_simulation():
                     "data": {
                         "simulation_id": simulation_id,
                         "status": "ready",
-                        "message": "已有完成的准备工作，无需重复生成",
+                        "message": "準備作業は既に完了しています。再生成は不要です",
                         "already_prepared": True,
                         "prepare_info": prepare_info
                     }
@@ -449,15 +449,15 @@ def prepare_simulation():
         if not project:
             return jsonify({
                 "success": False,
-                "error": f"项目不存在: {state.project_id}"
+                "error": f"プロジェクトが存在しません: {state.project_id}"
             }), 404
-        
+
         # 获取模拟需求
         simulation_requirement = project.simulation_requirement or ""
         if not simulation_requirement:
             return jsonify({
                 "success": False,
-                "error": "项目缺少模拟需求描述 (simulation_requirement)"
+                "error": "プロジェクトにシミュレーション要件の説明がありません (simulation_requirement)"
             }), 400
         
         # 获取文档文本
@@ -507,7 +507,7 @@ def prepare_simulation():
                     task_id,
                     status=TaskStatus.PROCESSING,
                     progress=0,
-                    message="开始准备模拟环境..."
+                    message="シミュレーション環境の準備を開始..."
                 )
                 
                 # 准备模拟（带进度回调）
@@ -528,10 +528,10 @@ def prepare_simulation():
                     
                     # 构建详细进度信息
                     stage_names = {
-                        "reading": "读取图谱实体",
-                        "generating_profiles": "生成Agent人设",
-                        "generating_config": "生成模拟配置",
-                        "copying_scripts": "准备模拟脚本"
+                        "reading": "グラフエンティティを読み込み中",
+                        "generating_profiles": "Agentプロフィールを生成中",
+                        "generating_config": "シミュレーション設定を生成中",
+                        "copying_scripts": "シミュレーションスクリプトを準備中"
                     }
                     
                     stage_index = list(stage_weights.keys()).index(stage) + 1 if stage in stage_weights else 1
@@ -612,7 +612,7 @@ def prepare_simulation():
                 "simulation_id": simulation_id,
                 "task_id": task_id,
                 "status": "preparing",
-                "message": "准备任务已启动，请通过 /api/simulation/prepare/status 查询进度",
+                "message": "準備タスクが開始されました。/api/simulation/prepare/status で進捗を確認してください",
                 "already_prepared": False,
                 "expected_entities_count": state.entities_count,  # 预期的Agent总数
                 "entity_types": state.entity_types  # 实体类型列表
@@ -680,7 +680,7 @@ def get_prepare_status():
                         "simulation_id": simulation_id,
                         "status": "ready",
                         "progress": 100,
-                        "message": "已有完成的准备工作",
+                        "message": "準備作業は既に完了しています",
                         "already_prepared": True,
                         "prepare_info": prepare_info
                     }
@@ -696,13 +696,13 @@ def get_prepare_status():
                         "simulation_id": simulation_id,
                         "status": "not_started",
                         "progress": 0,
-                        "message": "尚未开始准备，请调用 /api/simulation/prepare 开始",
+                        "message": "準備がまだ開始されていません。/api/simulation/prepare を呼び出して開始してください",
                         "already_prepared": False
                     }
                 })
             return jsonify({
                 "success": False,
-                "error": "请提供 task_id 或 simulation_id"
+                "error": "task_id または simulation_id を指定してください"
             }), 400
         
         task_manager = TaskManager()
@@ -720,7 +720,7 @@ def get_prepare_status():
                             "task_id": task_id,
                             "status": "ready",
                             "progress": 100,
-                            "message": "任务已完成（准备工作已存在）",
+                            "message": "タスク完了（準備作業は既に存在します）",
                             "already_prepared": True,
                             "prepare_info": prepare_info
                         }
@@ -728,7 +728,7 @@ def get_prepare_status():
             
             return jsonify({
                 "success": False,
-                "error": f"任务不存在: {task_id}"
+                "error": f"タスクが存在しません: {task_id}"
             }), 404
         
         task_dict = task.to_dict()
@@ -757,11 +757,11 @@ def get_simulation(simulation_id: str):
         if not state:
             return jsonify({
                 "success": False,
-                "error": f"模拟不存在: {simulation_id}"
+                "error": f"シミュレーションが存在しません: {simulation_id}"
             }), 404
-        
+
         result = state.to_dict()
-        
+
         # 如果模拟已准备好，附加运行说明
         if state.status == SimulationStatus.READY:
             result["run_instructions"] = manager.get_run_instructions(simulation_id)
@@ -946,7 +946,7 @@ def get_simulation_history():
             project = ProjectManager.get_project(sim.project_id)
             if project and hasattr(project, 'files') and project.files:
                 sim_dict["files"] = [
-                    {"filename": f.get("filename", "未知文件")} 
+                    {"filename": f.get("filename", "不明なファイル")}
                     for f in project.files[:3]
                 ]
             else:
@@ -1061,9 +1061,9 @@ def get_simulation_profiles_realtime(simulation_id: str):
         if not os.path.exists(sim_dir):
             return jsonify({
                 "success": False,
-                "error": f"模拟不存在: {simulation_id}"
+                "error": f"シミュレーションが存在しません: {simulation_id}"
             }), 404
-        
+
         # 确定文件路径
         if platform == "reddit":
             profiles_file = os.path.join(sim_dir, "reddit_profiles.json")
@@ -1164,9 +1164,9 @@ def get_simulation_config_realtime(simulation_id: str):
         if not os.path.exists(sim_dir):
             return jsonify({
                 "success": False,
-                "error": f"模拟不存在: {simulation_id}"
+                "error": f"シミュレーションが存在しません: {simulation_id}"
             }), 404
-        
+
         # 配置文件路径
         config_file = os.path.join(sim_dir, "simulation_config.json")
         
@@ -1269,7 +1269,7 @@ def get_simulation_config(simulation_id: str):
         if not config:
             return jsonify({
                 "success": False,
-                "error": f"模拟配置不存在，请先调用 /prepare 接口"
+                "error": "シミュレーション設定が存在しません。先に /prepare APIを呼び出してください"
             }), 404
         
         return jsonify({
@@ -1297,7 +1297,7 @@ def download_simulation_config(simulation_id: str):
         if not os.path.exists(config_path):
             return jsonify({
                 "success": False,
-                "error": "配置文件不存在，请先调用 /prepare 接口"
+                "error": "設定ファイルが存在しません。先に /prepare APIを呼び出してください"
             }), 404
         
         return send_file(
@@ -1341,7 +1341,7 @@ def download_simulation_script(script_name: str):
         if script_name not in allowed_scripts:
             return jsonify({
                 "success": False,
-                "error": f"未知脚本: {script_name}，可选: {allowed_scripts}"
+                "error": f"不明なスクリプト: {script_name}、利用可能: {allowed_scripts}"
             }), 400
         
         script_path = os.path.join(scripts_dir, script_name)
@@ -1349,7 +1349,7 @@ def download_simulation_script(script_name: str):
         if not os.path.exists(script_path):
             return jsonify({
                 "success": False,
-                "error": f"脚本文件不存在: {script_name}"
+                "error": f"スクリプトファイルが存在しません: {script_name}"
             }), 404
         
         return send_file(
@@ -1389,24 +1389,24 @@ def generate_profiles():
         if not graph_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 graph_id"
+                "error": "graph_id を指定してください"
             }), 400
-        
+
         entity_types = data.get('entity_types')
         use_llm = data.get('use_llm', True)
         platform = data.get('platform', 'reddit')
-        
+
         reader = ZepEntityReader()
         filtered = reader.filter_defined_entities(
             graph_id=graph_id,
             defined_entity_types=entity_types,
             enrich_with_edges=True
         )
-        
+
         if filtered.filtered_count == 0:
             return jsonify({
                 "success": False,
-                "error": "没有找到符合条件的实体"
+                "error": "条件に一致するエンティティが見つかりませんでした"
             }), 400
         
         generator = OasisProfileGenerator()
@@ -1491,7 +1491,7 @@ def start_simulation():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
 
         platform = data.get('platform', 'parallel')
@@ -1506,18 +1506,18 @@ def start_simulation():
                 if max_rounds <= 0:
                     return jsonify({
                         "success": False,
-                        "error": "max_rounds 必须是正整数"
+                        "error": "max_rounds は正の整数でなければなりません"
                     }), 400
             except (ValueError, TypeError):
                 return jsonify({
                     "success": False,
-                    "error": "max_rounds 必须是有效的整数"
+                    "error": "max_rounds は有効な整数でなければなりません"
                 }), 400
 
         if platform not in ['twitter', 'reddit', 'parallel']:
             return jsonify({
                 "success": False,
-                "error": f"无效的平台类型: {platform}，可选: twitter/reddit/parallel"
+                "error": f"無効なプラットフォームタイプ: {platform}、利用可能: twitter/reddit/parallel"
             }), 400
 
         # 检查模拟是否已准备好
@@ -1527,7 +1527,7 @@ def start_simulation():
         if not state:
             return jsonify({
                 "success": False,
-                "error": f"模拟不存在: {simulation_id}"
+                "error": f"シミュレーションが存在しません: {simulation_id}"
             }), 404
 
         force_restarted = False
@@ -1554,7 +1554,7 @@ def start_simulation():
                         else:
                             return jsonify({
                                 "success": False,
-                                "error": f"模拟正在运行中，请先调用 /stop 接口停止，或使用 force=true 强制重新开始"
+                                "error": f"シミュレーションは実行中です。先に /stop APIで停止するか、force=true で強制再起動してください"
                             }), 400
 
                 # 如果是强制模式，清理运行日志
@@ -1573,7 +1573,7 @@ def start_simulation():
                 # 准备工作未完成
                 return jsonify({
                     "success": False,
-                    "error": f"模拟未准备好，当前状态: {state.status.value}，请先调用 /prepare 接口"
+                    "error": f"シミュレーションの準備ができていません。現在のステータス: {state.status.value}。先に /prepare APIを呼び出してください"
                 }), 400
         
         # 获取图谱ID（用于图谱记忆更新）
@@ -1590,7 +1590,7 @@ def start_simulation():
             if not graph_id:
                 return jsonify({
                     "success": False,
-                    "error": "启用图谱记忆更新需要有效的 graph_id，请确保项目已构建图谱"
+                    "error": "グラフメモリ更新を有効にするには有効な graph_id が必要です。プロジェクトのグラフが構築済みであることを確認してください"
                 }), 400
             
             logger.info(f"启用图谱记忆更新: simulation_id={simulation_id}, graph_id={graph_id}")
@@ -1663,9 +1663,9 @@ def stop_simulation():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
-        
+
         run_state = SimulationRunner.stop_simulation(simulation_id)
         
         # 更新模拟状态
@@ -2011,7 +2011,7 @@ def get_simulation_posts(simulation_id: str):
                     "platform": platform,
                     "count": 0,
                     "posts": [],
-                    "message": "数据库不存在，模拟可能尚未运行"
+                    "message": "データベースが存在しません。シミュレーションがまだ実行されていない可能性があります"
                 }
             })
         
@@ -2197,33 +2197,33 @@ def interview_agent():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
-        
+
         if agent_id is None:
             return jsonify({
                 "success": False,
-                "error": "请提供 agent_id"
+                "error": "agent_id を指定してください"
             }), 400
-        
+
         if not prompt:
             return jsonify({
                 "success": False,
-                "error": "请提供 prompt（采访问题）"
+                "error": "prompt（インタビュー質問）を指定してください"
             }), 400
-        
+
         # 验证platform参数
         if platform and platform not in ("twitter", "reddit"):
             return jsonify({
                 "success": False,
-                "error": "platform 参数只能是 'twitter' 或 'reddit'"
+                "error": "platform パラメータは 'twitter' または 'reddit' のみ指定可能です"
             }), 400
-        
+
         # 检查环境状态
         if not SimulationRunner.check_env_alive(simulation_id):
             return jsonify({
                 "success": False,
-                "error": "模拟环境未运行或已关闭。请确保模拟已完成并进入等待命令模式。"
+                "error": "シミュレーション環境が実行されていないか、既に終了しています。シミュレーションが完了しコマンド待機モードに入っていることを確認してください。"
             }), 400
         
         # 优化prompt，添加前缀避免Agent调用工具
@@ -2251,7 +2251,7 @@ def interview_agent():
     except TimeoutError as e:
         return jsonify({
             "success": False,
-            "error": f"等待Interview响应超时: {str(e)}"
+            "error": f"Interviewの応答待ちタイムアウト: {str(e)}"
         }), 504
         
     except Exception as e:
@@ -2318,20 +2318,20 @@ def interview_agents_batch():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
 
         if not interviews or not isinstance(interviews, list):
             return jsonify({
                 "success": False,
-                "error": "请提供 interviews（采访列表）"
+                "error": "interviews（インタビューリスト）を指定してください"
             }), 400
 
         # 验证platform参数
         if platform and platform not in ("twitter", "reddit"):
             return jsonify({
                 "success": False,
-                "error": "platform 参数只能是 'twitter' 或 'reddit'"
+                "error": "platform パラメータは 'twitter' または 'reddit' のみ指定可能です"
             }), 400
 
         # 验证每个采访项
@@ -2339,26 +2339,26 @@ def interview_agents_batch():
             if 'agent_id' not in interview:
                 return jsonify({
                     "success": False,
-                    "error": f"采访列表第{i+1}项缺少 agent_id"
+                    "error": f"インタビューリストの第{i+1}項目に agent_id がありません"
                 }), 400
             if 'prompt' not in interview:
                 return jsonify({
                     "success": False,
-                    "error": f"采访列表第{i+1}项缺少 prompt"
+                    "error": f"インタビューリストの第{i+1}項目に prompt がありません"
                 }), 400
             # 验证每项的platform（如果有）
             item_platform = interview.get('platform')
             if item_platform and item_platform not in ("twitter", "reddit"):
                 return jsonify({
                     "success": False,
-                    "error": f"采访列表第{i+1}项的platform只能是 'twitter' 或 'reddit'"
+                    "error": f"インタビューリストの第{i+1}項目のplatformは 'twitter' または 'reddit' のみ指定可能です"
                 }), 400
 
         # 检查环境状态
         if not SimulationRunner.check_env_alive(simulation_id):
             return jsonify({
                 "success": False,
-                "error": "模拟环境未运行或已关闭。请确保模拟已完成并进入等待命令模式。"
+                "error": "シミュレーション環境が実行されていないか、既に終了しています。シミュレーションが完了しコマンド待機モードに入っていることを確認してください。"
             }), 400
 
         # 优化每个采访项的prompt，添加前缀避免Agent调用工具
@@ -2389,7 +2389,7 @@ def interview_agents_batch():
     except TimeoutError as e:
         return jsonify({
             "success": False,
-            "error": f"等待批量Interview响应超时: {str(e)}"
+            "error": f"バッチInterviewの応答待ちタイムアウト: {str(e)}"
         }), 504
 
     except Exception as e:
@@ -2445,27 +2445,27 @@ def interview_all_agents():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
 
         if not prompt:
             return jsonify({
                 "success": False,
-                "error": "请提供 prompt（采访问题）"
+                "error": "prompt（インタビュー質問）を指定してください"
             }), 400
 
         # 验证platform参数
         if platform and platform not in ("twitter", "reddit"):
             return jsonify({
                 "success": False,
-                "error": "platform 参数只能是 'twitter' 或 'reddit'"
+                "error": "platform パラメータは 'twitter' または 'reddit' のみ指定可能です"
             }), 400
 
         # 检查环境状态
         if not SimulationRunner.check_env_alive(simulation_id):
             return jsonify({
                 "success": False,
-                "error": "模拟环境未运行或已关闭。请确保模拟已完成并进入等待命令模式。"
+                "error": "シミュレーション環境が実行されていないか、既に終了しています。シミュレーションが完了しコマンド待機モードに入っていることを確認してください。"
             }), 400
 
         # 优化prompt，添加前缀避免Agent调用工具
@@ -2492,7 +2492,7 @@ def interview_all_agents():
     except TimeoutError as e:
         return jsonify({
             "success": False,
-            "error": f"等待全局Interview响应超时: {str(e)}"
+            "error": f"グローバルInterviewの応答待ちタイムアウト: {str(e)}"
         }), 504
 
     except Exception as e:
@@ -2549,7 +2549,7 @@ def get_interview_history():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
 
         history = SimulationRunner.get_interview_history(
@@ -2608,18 +2608,18 @@ def get_env_status():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
 
         env_alive = SimulationRunner.check_env_alive(simulation_id)
-        
+
         # 获取更详细的状态信息
         env_status = SimulationRunner.get_env_status_detail(simulation_id)
 
         if env_alive:
-            message = "环境正在运行，可以接收Interview命令"
+            message = "環境は実行中で、Interviewコマンドを受信可能です"
         else:
-            message = "环境未运行或已关闭"
+            message = "環境が実行されていないか、既に終了しています"
 
         return jsonify({
             "success": True,
@@ -2676,9 +2676,9 @@ def close_simulation_env():
         if not simulation_id:
             return jsonify({
                 "success": False,
-                "error": "请提供 simulation_id"
+                "error": "simulation_id を指定してください"
             }), 400
-        
+
         result = SimulationRunner.close_simulation_env(
             simulation_id=simulation_id,
             timeout=timeout
