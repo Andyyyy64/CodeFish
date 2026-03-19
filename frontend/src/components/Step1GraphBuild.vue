@@ -211,7 +211,7 @@ const creatingSimulation = ref(false)
 // 进入环境搭建 - 创建 simulation 并跳转
 const handleEnterEnvSetup = async () => {
   if (!props.projectData?.project_id || !props.projectData?.graph_id) {
-    console.error('缺少项目或图谱信息')
+    console.error('プロジェクトまたはグラフ情報が不足')
     return
   }
   
@@ -232,11 +232,11 @@ const handleEnterEnvSetup = async () => {
         params: { simulationId: res.data.simulation_id }
       })
     } else {
-      console.error('创建模拟失败:', res.error)
+      console.error('シミュレーション作成失敗:', res.error)
       alert('シミュレーション作成失敗: ' + (res.error || '不明なエラー'))
     }
   } catch (err) {
-    console.error('创建模拟异常:', err)
+    console.error('シミュレーション作成エラー:', err)
     alert('シミュレーション作成エラー: ' + err.message)
   } finally {
     creatingSimulation.value = false

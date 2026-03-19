@@ -535,7 +535,7 @@ const selectAgent = (agent, idx) => {
   
   // 恢复该 Agent 的对话记录
   chatHistory.value = chatHistoryCache.value[`agent_${idx}`] || []
-  addLog(`选择对话对象: ${agent.username}`)
+  addLog(`対話相手を選択: ${agent.username}`)
 }
 
 const formatTime = (timestamp) => {
@@ -662,10 +662,10 @@ const sendMessage = async () => {
       await sendToAgent(message)
     }
   } catch (err) {
-    addLog(`发送失败: ${err.message}`)
+    addLog(`送信失敗: ${err.message}`)
     chatHistory.value.push({
       role: 'assistant',
-      content: `抱歉，发生了错误: ${err.message}`,
+      content: `エラーが発生しました: ${err.message}`,
       timestamp: new Date().toISOString()
     })
   } finally {
@@ -677,7 +677,7 @@ const sendMessage = async () => {
 }
 
 const sendToReportAgent = async (message) => {
-  addLog(`向 Report Agent 发送: ${message.substring(0, 50)}...`)
+  addLog(`Report Agent へ送信: ${message.substring(0, 50)}...`)
   
   // Build chat history for API
   const historyForApi = chatHistory.value
@@ -697,21 +697,21 @@ const sendToReportAgent = async (message) => {
   if (res.success && res.data) {
     chatHistory.value.push({
       role: 'assistant',
-      content: res.data.response || res.data.answer || '无响应',
+      content: res.data.response || res.data.answer || '応答なし',
       timestamp: new Date().toISOString()
     })
-    addLog('Report Agent 已回复')
+    addLog('Report Agent が回答')
   } else {
-    throw new Error(res.error || '请求失败')
+    throw new Error(res.error || 'リクエスト失敗')
   }
 }
 
 const sendToAgent = async (message) => {
   if (!selectedAgent.value || selectedAgentIndex.value === null) {
-    throw new Error('请先选择一个模拟个体')
+    throw new Error('シミュレーション個体を選択してください')
   }
   
-  addLog(`向 ${selectedAgent.value.username} 发送: ${message.substring(0, 50)}...`)
+  addLog(`${selectedAgent.value.username} へ送信: ${message.substring(0, 50)}...`)
   
   // Build prompt with chat history
   let prompt = message
@@ -719,9 +719,9 @@ const sendToAgent = async (message) => {
     const historyContext = chatHistory.value
       .filter(msg => msg.content !== message)
       .slice(-6)
-      .map(msg => `${msg.role === 'user' ? '提问者' : '你'}：${msg.content}`)
+      .map(msg => `${msg.role === 'user' ? '質問者' : 'あなた'}：${msg.content}`)
       .join('\n')
-    prompt = `以下是我们之前的对话：\n${historyContext}\n\n现在我的新问题是：${message}`
+    prompt = `以下は以前の会話です：\n${historyContext}\n\n新しい質問：${message}`
   }
   
   const res = await interviewAgents({
@@ -761,12 +761,12 @@ const sendToAgent = async (message) => {
         content: responseContent,
         timestamp: new Date().toISOString()
       })
-      addLog(`${selectedAgent.value.username} 已回复`)
+      addLog(`${selectedAgent.value.username} が回答`)
     } else {
-      throw new Error('无响应数据')
+      throw new Error('応答データなし')
     }
   } else {
-    throw new Error(res.error || '请求失败')
+    throw new Error(res.error || 'リクエスト失敗')
   }
 }
 
@@ -803,7 +803,7 @@ const submitSurvey = async () => {
   if (selectedAgents.value.size === 0 || !surveyQuestion.value.trim()) return
   
   isSurveying.value = true
-  addLog(`发送问卷给 ${selectedAgents.value.size} 个对象...`)
+  addLog(`${selectedAgents.value.size} 件のAgentにアンケートを送信中...`)
   
   try {
     const interviews = Array.from(selectedAgents.value).map(idx => ({
@@ -830,20 +830,20 @@ const submitSurvey = async () => {
         const agent = profiles.value[agentIdx]
         
         // 优先使用 reddit 平台回复，其次 twitter
-        let responseContent = '无响应'
+        let responseContent = '応答なし'
         
         if (typeof resultsDict === 'object' && !Array.isArray(resultsDict)) {
           const redditKey = `reddit_${agentIdx}`
           const twitterKey = `twitter_${agentIdx}`
           const agentResult = resultsDict[redditKey] || resultsDict[twitterKey]
           if (agentResult) {
-            responseContent = agentResult.response || agentResult.answer || '无响应'
+            responseContent = agentResult.response || agentResult.answer || '応答なし'
           }
         } else if (Array.isArray(resultsDict)) {
           // 兼容数组格式
           const matchedResult = resultsDict.find(r => r.agent_id === agentIdx)
           if (matchedResult) {
-            responseContent = matchedResult.response || matchedResult.answer || '无响应'
+            responseContent = matchedResult.response || matchedResult.answer || '応答なし'
           }
         }
         
@@ -857,12 +857,12 @@ const submitSurvey = async () => {
       }
       
       surveyResults.value = surveyResultsList
-      addLog(`收到 ${surveyResults.value.length} 条回复`)
+      addLog(`${surveyResults.value.length} 件の回答を受信`)
     } else {
-      throw new Error(res.error || '请求失败')
+      throw new Error(res.error || 'リクエスト失敗')
     }
   } catch (err) {
-    addLog(`问卷发送失败: ${err.message}`)
+    addLog(`アンケート送信失敗: ${err.message}`)
   } finally {
     isSurveying.value = false
   }
@@ -873,7 +873,7 @@ const loadReportData = async () => {
   if (!props.reportId) return
   
   try {
-    addLog(`加载报告数据: ${props.reportId}`)
+    addLog(`レポートデータ読み込み: ${props.reportId}`)
     
     // Get report info
     const reportRes = await getReport(props.reportId)
@@ -882,7 +882,7 @@ const loadReportData = async () => {
       await loadAgentLogs()
     }
   } catch (err) {
-    addLog(`加载报告失败: ${err.message}`)
+    addLog(`レポート読み込み失敗: ${err.message}`)
   }
 }
 
@@ -904,10 +904,10 @@ const loadAgentLogs = async () => {
         }
       })
       
-      addLog('报告数据加载完成')
+      addLog('レポートデータ読み込み完了')
     }
   } catch (err) {
-    addLog(`加载报告日志失败: ${err.message}`)
+    addLog(`レポートログ読み込み失敗: ${err.message}`)
   }
 }
 
@@ -918,10 +918,10 @@ const loadProfiles = async () => {
     const res = await getSimulationProfilesRealtime(props.simulationId, 'reddit')
     if (res.success && res.data) {
       profiles.value = res.data.profiles || []
-      addLog(`加载了 ${profiles.value.length} 个模拟个体`)
+      addLog(`${profiles.value.length} 体のシミュレーションAgentを読み込み`)
     }
   } catch (err) {
-    addLog(`加载模拟个体失败: ${err.message}`)
+    addLog(`シミュレーションAgent読み込み失敗: ${err.message}`)
   }
 }
 
@@ -935,7 +935,7 @@ const handleClickOutside = (e) => {
 
 // Lifecycle
 onMounted(() => {
-  addLog('Step5 深度互动初始化')
+  addLog('Step5 深層インタラクション初期化')
   loadReportData()
   loadProfiles()
   document.addEventListener('click', handleClickOutside)
