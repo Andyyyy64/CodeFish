@@ -1,0 +1,29 @@
+# 2025年 開発者コミュニティの現状とOSSトレンド
+
+## AIコーディングツール市場
+- Claude Code (Anthropic): 月額$20〜$200のサブスク制。ターミナル完結型。パワーユーザーに人気
+- Codex (OpenAI): オープンソースCLI。ChatGPT Plus/Proサブスクで利用可能
+- Cursor: VSCodeフォーク型AI IDE。月額$20。コード補完が強い
+- GitHub Copilot: 老舗だが最近はClaude Code/Cursorに押され気味
+- Windsurf: Codeium系。無料枠が魅力だが性能面で見劣り
+
+## 開発者の不満・ペインポイント
+- AIツールが多すぎてどれを使えばいいかわからない「AI疲れ」
+- 月額課金が重なりサブスク疲れ（Copilot + Cursor + Claude Code = 月$60以上）
+- ローカルLLM (Ollama, LM Studio) は性能向上したが、ツール連携がまだ弱い
+- CIパイプラインが遅い。GitHub Actionsの待ち時間がストレス
+- モノレポ管理ツール (Turborepo, Nx) が複雑すぎる
+- Dockerビルドが重い。特にNode.jsプロジェクト
+
+## 最近バズったOSSパターン
+- 既存ツールのRust書き直し: Ruff (Python linter), Biome (JS toolchain), uv (pip代替)
+- AIネイティブ開発ツール: Aider, Continue, OpenHands
+- 単機能で高速: Bun (JS runtime), Vite (bundler)
+- 共通点: 「遅い・面倒な既存ツールを10倍速くする」が最もスターを集めやすい
+
+## コミュニティの空気感
+- Hacker Newsでは「また新しいAIツールか」という冷笑的な反応も増加
+- 一方でReddit r/programmingでは実用的なツールは素直に評価される
+- 日本の開発者コミュニティ (Zenn, Qiita) ではAIツール比較記事が常にトレンド入り
+- 「OSSで無料」は正義。ただしメンテされないOSSへの不信感も根強い
+- スター数だけ多くて実用性がないOSSへの反発（いわゆる「スター乞食」批判）
