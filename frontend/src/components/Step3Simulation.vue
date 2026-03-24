@@ -103,6 +103,50 @@
       </div>
     </div>
 
+    <!-- Resume Preview Panel -->
+    <div v-if="resumePreview && phase === 0" class="resume-preview">
+      <div class="resume-card">
+        <div class="resume-title">前回のシミュレーションデータ</div>
+        <div class="resume-stats">
+          <div class="resume-stat">
+            <span class="resume-label">ステータス</span>
+            <span class="resume-value" :class="resumePreview.runner_status">{{ resumePreview.runner_status || '-' }}</span>
+          </div>
+          <div class="resume-stat">
+            <span class="resume-label">進行ラウンド</span>
+            <span class="resume-value mono">{{ resumePreview.current_round || 0 }} / {{ resumePreview.total_rounds || '-' }}</span>
+          </div>
+          <div class="resume-stat">
+            <span class="resume-label">総アクション数</span>
+            <span class="resume-value mono">{{ resumePreview.total_actions_count || 0 }}</span>
+          </div>
+          <div class="resume-stat">
+            <span class="resume-label">Info Plaza</span>
+            <span class="resume-value mono">{{ resumePreview.twitter_actions_count || 0 }} acts / R{{ resumePreview.twitter_current_round || 0 }}</span>
+          </div>
+          <div class="resume-stat">
+            <span class="resume-label">Forum</span>
+            <span class="resume-value mono">{{ resumePreview.reddit_actions_count || 0 }} acts / R{{ resumePreview.reddit_current_round || 0 }}</span>
+          </div>
+        </div>
+        <div class="resume-actions">
+          <button class="resume-btn primary" @click="useResume = true; doStartSimulation()" :disabled="isStarting">
+            {{ isStarting ? '起動中...' : 'シミュレーションを再開' }}
+          </button>
+          <button class="resume-btn secondary" @click="useResume = false; resumePreview = null; doStartSimulation()" :disabled="isStarting">
+            最初からやり直す
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading Preview -->
+    <div v-if="isLoadingPreview && phase === 0" class="resume-preview">
+      <div class="resume-card">
+        <div class="resume-title">前回のデータを読み込み中...</div>
+      </div>
+    </div>
+
     <!-- Main Content: Dual Timeline -->
     <div class="main-content-area" ref="scrollContainer">
       <!-- Timeline Header -->
@@ -299,13 +343,21 @@ import { generateReport } from '../api/report'
 const props = defineProps({
   simulationId: String,
   maxRounds: Number, // 从Step2传入的最大轮数
+  simulationMode: {
+    type: String,
+    default: 'director'
+  },
   minutesPerRound: {
     type: Number,
     default: 30 // 默认每轮30分钟
   },
   projectData: Object,
   graphData: Object,
-  systemLogs: Array
+  systemLogs: Array,
+  resume: {
+    type: Boolean,
+    default: false
+  }
 })
 
 const emit = defineEmits(['go-back', 'next-step', 'add-log', 'update-status'])
@@ -322,6 +374,9 @@ const runStatus = ref({})
 const allActions = ref([]) // 所有动作（增量累积）
 const actionIds = ref(new Set()) // 用于去重的动作ID集合
 const scrollContainer = ref(null)
+const resumePreview = ref(null) // 再開プレビューデータ
+const isLoadingPreview = ref(false) // プレビュー読み込み中
+const useResume = ref(false) // 実際にresumeモードで開始するか
 
 // Computed
 // 按时间顺序显示动作（最新的在最后面，即底部）
@@ -388,14 +443,19 @@ const doStartSimulation = async () => {
   
   isStarting.value = true
   startError.value = null
-  addLog('2プラットフォーム並列シミュレーションを起動中...')
+  addLog(useResume.value
+    ? '前回のデータを保持してシミュレーションを再開中...'
+    : props.simulationMode === 'director'
+      ? 'Directorモードでシミュレーション起動中（省コスト）...'
+      : 'Swarmモードでシミュレーション起動中（各エージェント独立）...')
   emit('update-status', 'processing')
   
   try {
     const params = {
       simulation_id: props.simulationId,
       platform: 'parallel',
-      force: true,  // 强制重新开始
+      force: !useResume.value,  // resume時はforceしない（データを保持）
+      resume: useResume.value,
       enable_graph_memory_update: true  // 开启动态图谱更新
     }
     
@@ -403,13 +463,17 @@ const doStartSimulation = async () => {
       params.max_rounds = props.maxRounds
       addLog(`最大シミュレーションラウンド数を設定: ${props.maxRounds}`)
     }
-    
+
+    params.simulation_mode = props.simulationMode
+
     addLog('動的グラフ更新モードを有効化')
     
     const res = await startSimulation(params)
     
     if (res.success && res.data) {
-      if (res.data.force_restarted) {
+      if (res.data.resumed) {
+        addLog('✓ 前回のデータを読み込み、シミュレーションを再開')
+      } else if (res.data.force_restarted) {
         addLog('✓ 古いシミュレーションログをクリア、再シミュレーション開始')
       }
       addLog('✓ シミュレーションエンジン起動成功')
@@ -684,10 +748,42 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
+// 再開モード: 前回のステータスをロード（開始はしない）
+const loadResumePreview = async () => {
+  if (!props.simulationId) return
+  isLoadingPreview.value = true
+  addLog('前回のシミュレーションデータを読み込み中...')
+
+  try {
+    const res = await getRunStatus(props.simulationId)
+    if (res.success && res.data) {
+      resumePreview.value = res.data
+      addLog(`✓ 前回データ読み込み完了`)
+      addLog(`  ├─ ステータス: ${res.data.runner_status || '-'}`)
+      addLog(`  ├─ ラウンド: ${res.data.current_round || 0}/${res.data.total_rounds || '-'}`)
+      addLog(`  ├─ アクション数: ${res.data.total_actions_count || 0}`)
+      addLog(`  └─ 「シミュレーション再開」ボタンで続行できます`)
+    } else {
+      addLog('前回のデータが見つかりません。新規開始します。')
+      resumePreview.value = null
+      doStartSimulation()
+    }
+  } catch (err) {
+    addLog(`データ読み込み失敗: ${err.message}`)
+    resumePreview.value = null
+  } finally {
+    isLoadingPreview.value = false
+  }
+}
+
 onMounted(() => {
   addLog('Step3 シミュレーション実行初期化')
   if (props.simulationId) {
-    doStartSimulation()
+    if (props.resume) {
+      loadResumePreview()
+    } else {
+      doStartSimulation()
+    }
   }
 })
 
@@ -697,6 +793,103 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* Resume Preview */
+.resume-preview {
+  display: flex;
+  justify-content: center;
+  padding: 32px 24px;
+}
+
+.resume-card {
+  background: #FAFAFA;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 28px 32px;
+  max-width: 480px;
+  width: 100%;
+}
+
+.resume-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111;
+  margin-bottom: 20px;
+  letter-spacing: -0.01em;
+}
+
+.resume-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.resume-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #F3F4F6;
+}
+
+.resume-label {
+  font-size: 12px;
+  color: #6B7280;
+  font-weight: 500;
+}
+
+.resume-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111;
+}
+
+.resume-value.completed { color: #10B981; }
+.resume-value.stopped { color: #F59E0B; }
+.resume-value.running { color: #3B82F6; }
+.resume-value.failed { color: #EF4444; }
+
+.resume-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.resume-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+}
+
+.resume-btn.primary {
+  background: #111;
+  color: #FFF;
+}
+
+.resume-btn.primary:hover:not(:disabled) {
+  background: #333;
+}
+
+.resume-btn.secondary {
+  background: #FFF;
+  color: #666;
+  border: 1px solid #D1D5DB;
+}
+
+.resume-btn.secondary:hover:not(:disabled) {
+  background: #F9FAFB;
+  color: #111;
+}
+
+.resume-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .simulation-panel {
   height: 100%;
   display: flex;

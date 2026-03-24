@@ -168,10 +168,16 @@ try:
         generate_twitter_agent_graph,
         generate_reddit_agent_graph
     )
+    from oasis.social_platform.platform import Platform
+    from oasis.social_platform.channel import Channel
 except ImportError as e:
     print(f"エラー: 依存関係が不足しています {e}")
     print("先にインストールしてください: pip install oasis-ai camel-ai")
     sys.exit(1)
+
+# Apply OASIS monkey-patches (persona prompt, multi-action, env template)
+from oasis_patches import apply_all_patches, enable_memory_management, reset_agent_memories
+apply_all_patches()
 
 
 # Twitter可用动作（不包含INTERVIEW，INTERVIEW只能通过ManualAction手动触发）
@@ -1098,12 +1104,66 @@ class PlatformSimulation:
         self.total_actions = 0
 
 
+# ---------------------------------------------------------------------------
+# Resume helpers
+# ---------------------------------------------------------------------------
+
+def detect_resume_round(simulation_dir: str, platform: str) -> int:
+    """Detect the last completed round from actions.jsonl.
+
+    Returns the round number to resume from (0 if no data found).
+    """
+    actions_path = os.path.join(simulation_dir, platform, "actions.jsonl")
+    if not os.path.exists(actions_path):
+        return 0
+
+    max_round = 0
+    try:
+        with open(actions_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    # action entries have "round" field
+                    round_num = data.get("round", 0)
+                    if isinstance(round_num, int) and round_num > max_round:
+                        max_round = round_num
+                except json.JSONDecodeError:
+                    continue
+    except Exception:
+        pass
+
+    return max_round
+
+
+async def resume_reset(env):
+    """Start the platform running task and connect agents to the channel,
+    WITHOUT signing up agents again (they already exist in the DB).
+
+    This is a resume-safe alternative to env.reset().
+    """
+    from oasis.social_agent.agents_generator import connect_platform_channel
+
+    # Start the platform message loop
+    env.platform_task = asyncio.create_task(env.platform.running())
+
+    # Connect agents to the channel (but don't sign up)
+    env.agent_graph = connect_platform_channel(
+        channel=env.channel, agent_graph=env.agent_graph
+    )
+
+
 async def run_twitter_simulation(
-    config: Dict[str, Any], 
+    config: Dict[str, Any],
     simulation_dir: str,
     action_logger: Optional[PlatformActionLogger] = None,
     main_logger: Optional[SimulationLogManager] = None,
-    max_rounds: Optional[int] = None
+    max_rounds: Optional[int] = None,
+    resume: bool = False,
+    resume_round: Optional[int] = None,
+    simulation_mode: str = 'swarm',
 ) -> PlatformSimulation:
     """运行Twitter模拟
     
@@ -1149,18 +1209,46 @@ async def run_twitter_simulation(
             agent_names[agent_id] = getattr(agent, 'name', f'Agent_{agent_id}')
     
     db_path = os.path.join(simulation_dir, "twitter_simulation.db")
-    if os.path.exists(db_path):
+
+    # Resume mode: detect start round and keep existing DB
+    start_round = 0
+    if resume:
+        if resume_round is not None:
+            start_round = resume_round
+        else:
+            start_round = detect_resume_round(simulation_dir, "twitter")
+        if start_round > 0:
+            log_info(f"再開モード: ラウンド {start_round + 1} から再開します")
+
+    if not resume and os.path.exists(db_path):
         os.remove(db_path)
-    
+
+    # Custom Platform with increased post visibility (Fix 3)
+    twitter_channel = Channel()
+    twitter_platform = Platform(
+        db_path=db_path,
+        channel=twitter_channel,
+        recsys_type="twhin-bert",
+        refresh_rec_post_count=10,   # was 2: agents see more posts per refresh
+        max_rec_post_len=20,          # was 2: larger recommendation buffer
+        following_post_count=5,       # was 3: more posts from followed users
+    )
     result.env = oasis.make(
         agent_graph=result.agent_graph,
-        platform=oasis.DefaultPlatformType.TWITTER,
+        platform=twitter_platform,
         database_path=db_path,
-        semaphore=30,  # 限制最大并発 LLM 请求数，防止 API 过载
+        semaphore=30,
     )
 
-    await result.env.reset()
-    log_info("環境が起動しました")
+    if resume and start_round > 0:
+        await resume_reset(result.env)
+        log_info("環境が起動しました（再開モード - 既存データを保持）")
+    else:
+        await result.env.reset()
+        log_info("環境が起動しました")
+
+    # Fix 4: Enable memory management after reset
+    enable_memory_management(result.env)
 
     if action_logger:
         action_logger.log_simulation_start(config)
@@ -1168,47 +1256,64 @@ async def run_twitter_simulation(
     total_actions = 0
     last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
 
-    # 执行初始事件
-    event_config = config.get("event_config", {})
-    initial_posts = event_config.get("initial_posts", [])
+    # Resume mode: skip initial events and count existing actions
+    if resume and start_round > 0:
+        # Count existing actions from DB to maintain accurate total
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(rowid) FROM trace")
+            row = cursor.fetchone()
+            last_rowid = row[0] if row and row[0] else 0
+            cursor.execute("SELECT COUNT(*) FROM trace WHERE action != 'sign_up'")
+            row = cursor.fetchone()
+            total_actions = row[0] if row and row[0] else 0
+            conn.close()
+            log_info(f"既存データ: {total_actions} アクション, last_rowid={last_rowid}")
+        except Exception as e:
+            log_info(f"既存データの読み込みに失敗: {e}")
+    else:
+        # Execute initial events (only for fresh start)
+        event_config = config.get("event_config", {})
+        initial_posts = event_config.get("initial_posts", [])
 
-    # 记录 round 0 开始（初始事件阶段）
-    if action_logger:
-        action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
+        # 记录 round 0 开始（初始事件阶段）
+        if action_logger:
+            action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
 
-    initial_action_count = 0
-    if initial_posts:
-        initial_actions = {}
-        for post in initial_posts:
-            agent_id = post.get("poster_agent_id", 0)
-            content = post.get("content", "")
-            try:
-                agent = result.env.agent_graph.get_agent(agent_id)
-                initial_actions[agent] = ManualAction(
-                    action_type=ActionType.CREATE_POST,
-                    action_args={"content": content}
-                )
-
-                if action_logger:
-                    action_logger.log_action(
-                        round_num=0,
-                        agent_id=agent_id,
-                        agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
-                        action_type="CREATE_POST",
+        initial_action_count = 0
+        if initial_posts:
+            initial_actions = {}
+            for post in initial_posts:
+                agent_id = post.get("poster_agent_id", 0)
+                content = post.get("content", "")
+                try:
+                    agent = result.env.agent_graph.get_agent(agent_id)
+                    initial_actions[agent] = ManualAction(
+                        action_type=ActionType.CREATE_POST,
                         action_args={"content": content}
                     )
-                    total_actions += 1
-                    initial_action_count += 1
-            except Exception:
-                pass
 
-        if initial_actions:
-            await result.env.step(initial_actions)
-            log_info(f"{len(initial_actions)} 件の初期投稿を公開しました")
-    
-    # 记录 round 0 结束
-    if action_logger:
-        action_logger.log_round_end(0, initial_action_count)
+                    if action_logger:
+                        action_logger.log_action(
+                            round_num=0,
+                            agent_id=agent_id,
+                            agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
+                            action_type="CREATE_POST",
+                            action_args={"content": content}
+                        )
+                        total_actions += 1
+                        initial_action_count += 1
+                except Exception:
+                    pass
+
+            if initial_actions:
+                await result.env.step(initial_actions)
+                log_info(f"{len(initial_actions)} 件の初期投稿を公開しました")
+
+        # 记录 round 0 结束
+        if action_logger:
+            action_logger.log_round_end(0, initial_action_count)
     
     # 主模拟循环
     time_config = config.get("time_config", {})
@@ -1222,42 +1327,87 @@ async def run_twitter_simulation(
         total_rounds = min(total_rounds, max_rounds)
         if total_rounds < original_rounds:
             log_info(f"ラウンド数を切り詰めました: {original_rounds} -> {total_rounds} (max_rounds={max_rounds})")
-    
+
     start_time = datetime.now()
-    
-    for round_num in range(total_rounds):
+
+    # Director mode: initialize DirectorEngine
+    director = None
+    if simulation_mode == 'director':
+        from director_engine import DirectorEngine
+        agent_personas = {}
+        for agent_id, name in agent_names.items():
+            profile = ""
+            for cfg in config.get("agent_configs", []):
+                if cfg.get("agent_id") == agent_id:
+                    profile = cfg.get("entity_description", "")
+                    break
+            agent_personas[agent_id] = {"name": name, "profile": profile}
+        director = DirectorEngine(model, agent_personas, "twitter")
+        log_info("Directorモードで実行します")
+
+    if start_round > 0:
+        log_info(f"ラウンド {start_round + 1}/{total_rounds} から再開")
+
+    for round_num in range(start_round, total_rounds):
         # 检查是否收到退出信号
         if _shutdown_event and _shutdown_event.is_set():
             if main_logger:
                 main_logger.info(f"終了シグナルを受信、第 {round_num + 1} ラウンドでシミュレーションを停止")
             break
-        
+
         simulated_minutes = round_num * minutes_per_round
         simulated_hour = (simulated_minutes // 60) % 24
         simulated_day = simulated_minutes // (60 * 24) + 1
-        
+
         active_agents = get_active_agents_for_round(
             result.env, config, simulated_hour, round_num
         )
-        
+
         # 无论是否有活跃agent，都记录round开始
         if action_logger:
             action_logger.log_round_start(round_num + 1, simulated_hour)
-        
+
         if not active_agents:
             # 没有活跃agent时也记录round结束（actions_count=0）
             if action_logger:
                 action_logger.log_round_end(round_num + 1, 0)
             continue
-        
-        actions = {agent: LLMAction() for _, agent in active_agents}
-        await result.env.step(actions)
-        
-        # 从数据库获取实际执行的动作并记录
+
+        if simulation_mode == 'director' and director is not None:
+            # Director mode: single LLM call decides all agent actions
+            manual_actions = await director.decide_actions(
+                env=result.env,
+                active_agents=active_agents,
+                db_path=db_path,
+                round_num=round_num,
+                total_rounds=total_rounds,
+                simulated_hour=simulated_hour,
+            )
+
+            if manual_actions:
+                await result.env.step(manual_actions)
+        else:
+            # Swarm mode: Fix 5: Two-phase reaction chain
+            # Phase A: ~1/3 of agents act first (their posts enter the DB)
+            # Phase B: remaining ~2/3 act (rec_table updated, so they can see Phase A posts)
+            random.shuffle(active_agents)
+            split = max(1, len(active_agents) // 3)
+            posters = active_agents[:split]
+            reactors = active_agents[split:]
+
+            if posters:
+                poster_actions = {agent: LLMAction() for _, agent in posters}
+                await result.env.step(poster_actions)
+
+            if reactors:
+                reactor_actions = {agent: LLMAction() for _, agent in reactors}
+                await result.env.step(reactor_actions)
+
+        # Fetch all actions from both phases
         actual_actions, last_rowid = fetch_new_actions_from_db(
             db_path, last_rowid, agent_names
         )
-        
+
         round_action_count = 0
         for action_data in actual_actions:
             if action_logger:
@@ -1270,32 +1420,40 @@ async def run_twitter_simulation(
                 )
                 total_actions += 1
                 round_action_count += 1
-        
+
         if action_logger:
             action_logger.log_round_end(round_num + 1, round_action_count)
-        
+
+        # Fix 4: Periodic memory reset to prevent context overflow
+        MEMORY_RESET_INTERVAL = 10
+        if (round_num + 1) % MEMORY_RESET_INTERVAL == 0:
+            reset_agent_memories(result.env)
+
         if (round_num + 1) % 20 == 0:
             progress = (round_num + 1) / total_rounds * 100
             log_info(f"Day {simulated_day}, {simulated_hour:02d}:00 - Round {round_num + 1}/{total_rounds} ({progress:.1f}%)")
-    
+
     # 注意：不关闭环境，保留给Interview使用
-    
+
     if action_logger:
         action_logger.log_simulation_end(total_rounds, total_actions)
-    
+
     result.total_actions = total_actions
     elapsed = (datetime.now() - start_time).total_seconds()
     log_info(f"シミュレーションループ完了! 所要時間: {elapsed:.1f}秒, 総アクション: {total_actions}")
-    
+
     return result
 
 
 async def run_reddit_simulation(
-    config: Dict[str, Any], 
+    config: Dict[str, Any],
     simulation_dir: str,
     action_logger: Optional[PlatformActionLogger] = None,
     main_logger: Optional[SimulationLogManager] = None,
-    max_rounds: Optional[int] = None
+    max_rounds: Optional[int] = None,
+    resume: bool = False,
+    resume_round: Optional[int] = None,
+    simulation_mode: str = 'swarm',
 ) -> PlatformSimulation:
     """运行Reddit模拟
     
@@ -1340,18 +1498,47 @@ async def run_reddit_simulation(
             agent_names[agent_id] = getattr(agent, 'name', f'Agent_{agent_id}')
     
     db_path = os.path.join(simulation_dir, "reddit_simulation.db")
-    if os.path.exists(db_path):
+
+    # Resume mode: detect start round and keep existing DB
+    start_round = 0
+    if resume:
+        if resume_round is not None:
+            start_round = resume_round
+        else:
+            start_round = detect_resume_round(simulation_dir, "reddit")
+        if start_round > 0:
+            log_info(f"再開モード: ラウンド {start_round + 1} から再開します")
+
+    if not resume and os.path.exists(db_path):
         os.remove(db_path)
-    
+
+    # Custom Platform with increased post visibility (Fix 3)
+    reddit_channel = Channel()
+    reddit_platform = Platform(
+        db_path=db_path,
+        channel=reddit_channel,
+        recsys_type="reddit",
+        allow_self_rating=True,
+        show_score=True,
+        refresh_rec_post_count=15,   # was 5: agents see more posts per refresh
+        max_rec_post_len=100,        # keep 100
+    )
     result.env = oasis.make(
         agent_graph=result.agent_graph,
-        platform=oasis.DefaultPlatformType.REDDIT,
+        platform=reddit_platform,
         database_path=db_path,
-        semaphore=30,  # 限制最大并发 LLM 请求数，防止 API 过载
+        semaphore=30,
     )
-    
-    await result.env.reset()
-    log_info("環境が起動しました")
+
+    if resume and start_round > 0:
+        await resume_reset(result.env)
+        log_info("環境が起動しました（再開モード - 既存データを保持）")
+    else:
+        await result.env.reset()
+        log_info("環境が起動しました")
+
+    # Fix 4: Enable memory management after reset
+    enable_memory_management(result.env)
 
     if action_logger:
         action_logger.log_simulation_start(config)
@@ -1359,55 +1546,71 @@ async def run_reddit_simulation(
     total_actions = 0
     last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
 
-    # 执行初始事件
-    event_config = config.get("event_config", {})
-    initial_posts = event_config.get("initial_posts", [])
+    # Resume mode: skip initial events and count existing actions
+    if resume and start_round > 0:
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(rowid) FROM trace")
+            row = cursor.fetchone()
+            last_rowid = row[0] if row and row[0] else 0
+            cursor.execute("SELECT COUNT(*) FROM trace WHERE action != 'sign_up'")
+            row = cursor.fetchone()
+            total_actions = row[0] if row and row[0] else 0
+            conn.close()
+            log_info(f"既存データ: {total_actions} アクション, last_rowid={last_rowid}")
+        except Exception as e:
+            log_info(f"既存データの読み込みに失敗: {e}")
+    else:
+        # Execute initial events (only for fresh start)
+        event_config = config.get("event_config", {})
+        initial_posts = event_config.get("initial_posts", [])
 
-    # 记录 round 0 开始（初始事件阶段）
-    if action_logger:
-        action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
+        # 记录 round 0 开始（初始事件阶段）
+        if action_logger:
+            action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
 
-    initial_action_count = 0
-    if initial_posts:
-        initial_actions = {}
-        for post in initial_posts:
-            agent_id = post.get("poster_agent_id", 0)
-            content = post.get("content", "")
-            try:
-                agent = result.env.agent_graph.get_agent(agent_id)
-                if agent in initial_actions:
-                    if not isinstance(initial_actions[agent], list):
-                        initial_actions[agent] = [initial_actions[agent]]
-                    initial_actions[agent].append(ManualAction(
-                        action_type=ActionType.CREATE_POST,
-                        action_args={"content": content}
-                    ))
-                else:
-                    initial_actions[agent] = ManualAction(
-                        action_type=ActionType.CREATE_POST,
-                        action_args={"content": content}
-                    )
+        initial_action_count = 0
+        if initial_posts:
+            initial_actions = {}
+            for post in initial_posts:
+                agent_id = post.get("poster_agent_id", 0)
+                content = post.get("content", "")
+                try:
+                    agent = result.env.agent_graph.get_agent(agent_id)
+                    if agent in initial_actions:
+                        if not isinstance(initial_actions[agent], list):
+                            initial_actions[agent] = [initial_actions[agent]]
+                        initial_actions[agent].append(ManualAction(
+                            action_type=ActionType.CREATE_POST,
+                            action_args={"content": content}
+                        ))
+                    else:
+                        initial_actions[agent] = ManualAction(
+                            action_type=ActionType.CREATE_POST,
+                            action_args={"content": content}
+                        )
 
-                if action_logger:
-                    action_logger.log_action(
-                        round_num=0,
-                        agent_id=agent_id,
-                        agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
-                        action_type="CREATE_POST",
-                        action_args={"content": content}
-                    )
-                    total_actions += 1
-                    initial_action_count += 1
-            except Exception:
-                pass
+                    if action_logger:
+                        action_logger.log_action(
+                            round_num=0,
+                            agent_id=agent_id,
+                            agent_name=agent_names.get(agent_id, f"Agent_{agent_id}"),
+                            action_type="CREATE_POST",
+                            action_args={"content": content}
+                        )
+                        total_actions += 1
+                        initial_action_count += 1
+                except Exception:
+                    pass
 
-        if initial_actions:
-            await result.env.step(initial_actions)
-            log_info(f"{len(initial_actions)} 件の初期投稿を公開しました")
-    
-    # 记录 round 0 结束
-    if action_logger:
-        action_logger.log_round_end(0, initial_action_count)
+            if initial_actions:
+                await result.env.step(initial_actions)
+                log_info(f"{len(initial_actions)} 件の初期投稿を公開しました")
+
+        # 记录 round 0 结束
+        if action_logger:
+            action_logger.log_round_end(0, initial_action_count)
     
     # 主模拟循环
     time_config = config.get("time_config", {})
@@ -1423,40 +1626,83 @@ async def run_reddit_simulation(
             log_info(f"ラウンド数を切り詰めました: {original_rounds} -> {total_rounds} (max_rounds={max_rounds})")
     
     start_time = datetime.now()
-    
-    for round_num in range(total_rounds):
+
+    # Director mode: initialize DirectorEngine
+    director = None
+    if simulation_mode == 'director':
+        from director_engine import DirectorEngine
+        agent_personas = {}
+        for agent_id, name in agent_names.items():
+            profile = ""
+            for cfg in config.get("agent_configs", []):
+                if cfg.get("agent_id") == agent_id:
+                    profile = cfg.get("entity_description", "")
+                    break
+            agent_personas[agent_id] = {"name": name, "profile": profile}
+        director = DirectorEngine(model, agent_personas, "reddit")
+        log_info("Directorモードで実行します")
+
+    if start_round > 0:
+        log_info(f"ラウンド {start_round + 1}/{total_rounds} から再開")
+
+    for round_num in range(start_round, total_rounds):
         # 检查是否收到退出信号
         if _shutdown_event and _shutdown_event.is_set():
             if main_logger:
                 main_logger.info(f"終了シグナルを受信、第 {round_num + 1} ラウンドでシミュレーションを停止")
             break
-        
+
         simulated_minutes = round_num * minutes_per_round
         simulated_hour = (simulated_minutes // 60) % 24
         simulated_day = simulated_minutes // (60 * 24) + 1
-        
+
         active_agents = get_active_agents_for_round(
             result.env, config, simulated_hour, round_num
         )
-        
+
         # 无论是否有活跃agent，都记录round开始
         if action_logger:
             action_logger.log_round_start(round_num + 1, simulated_hour)
-        
+
         if not active_agents:
             # 没有活跃agent时也记录round结束（actions_count=0）
             if action_logger:
                 action_logger.log_round_end(round_num + 1, 0)
             continue
-        
-        actions = {agent: LLMAction() for _, agent in active_agents}
-        await result.env.step(actions)
-        
-        # 从数据库获取实际执行的动作并记录
+
+        if simulation_mode == 'director' and director is not None:
+            # Director mode: single LLM call decides all agent actions
+            manual_actions = await director.decide_actions(
+                env=result.env,
+                active_agents=active_agents,
+                db_path=db_path,
+                round_num=round_num,
+                total_rounds=total_rounds,
+                simulated_hour=simulated_hour,
+            )
+
+            if manual_actions:
+                await result.env.step(manual_actions)
+        else:
+            # Swarm mode: Fix 5: Two-phase reaction chain
+            random.shuffle(active_agents)
+            split = max(1, len(active_agents) // 3)
+            posters = active_agents[:split]
+            reactors = active_agents[split:]
+
+            if posters:
+                poster_actions = {agent: LLMAction() for _, agent in posters}
+                await result.env.step(poster_actions)
+
+            if reactors:
+                reactor_actions = {agent: LLMAction() for _, agent in reactors}
+                await result.env.step(reactor_actions)
+
+        # Fetch all actions from both phases
         actual_actions, last_rowid = fetch_new_actions_from_db(
             db_path, last_rowid, agent_names
         )
-        
+
         round_action_count = 0
         for action_data in actual_actions:
             if action_logger:
@@ -1469,23 +1715,28 @@ async def run_reddit_simulation(
                 )
                 total_actions += 1
                 round_action_count += 1
-        
+
         if action_logger:
             action_logger.log_round_end(round_num + 1, round_action_count)
-        
+
+        # Fix 4: Periodic memory reset to prevent context overflow
+        MEMORY_RESET_INTERVAL = 10
+        if (round_num + 1) % MEMORY_RESET_INTERVAL == 0:
+            reset_agent_memories(result.env)
+
         if (round_num + 1) % 20 == 0:
             progress = (round_num + 1) / total_rounds * 100
             log_info(f"Day {simulated_day}, {simulated_hour:02d}:00 - Round {round_num + 1}/{total_rounds} ({progress:.1f}%)")
-    
+
     # 注意：不关闭环境，保留给Interview使用
-    
+
     if action_logger:
         action_logger.log_simulation_end(total_rounds, total_actions)
-    
+
     result.total_actions = total_actions
     elapsed = (datetime.now() - start_time).total_seconds()
     log_info(f"シミュレーションループ完了! 所要時間: {elapsed:.1f}秒, 総アクション: {total_actions}")
-    
+
     return result
 
 
@@ -1519,7 +1770,25 @@ async def main():
         default=False,
         help='模拟完成后立即关闭环境，不进入等待命令模式'
     )
-    
+    parser.add_argument(
+        '--resume',
+        action='store_true',
+        default=False,
+        help='既存データを保持してシミュレーションを再開する（DBを削除せず、完了済みラウンドをスキップ）'
+    )
+    parser.add_argument(
+        '--resume-round',
+        type=int,
+        default=None,
+        help='再開するラウンド番号を指定（省略時はactions.jsonlから自動検出）'
+    )
+    parser.add_argument(
+        '--simulation-mode',
+        choices=['swarm', 'director'],
+        default='swarm',
+        help='swarm: 各エージェント独立LLM呼び出し / director: 1回のLLM呼び出しで全員分決定'
+    )
+
     args = parser.parse_args()
     
     # 在 main 函数开始时创建 shutdown 事件，确保整个程序都能响应退出信号
@@ -1576,15 +1845,21 @@ async def main():
     twitter_result: Optional[PlatformSimulation] = None
     reddit_result: Optional[PlatformSimulation] = None
     
+    resume_kwargs = {
+        "resume": args.resume,
+        "resume_round": args.resume_round,
+        "simulation_mode": args.simulation_mode,
+    }
+
     if args.twitter_only:
-        twitter_result = await run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds)
+        twitter_result = await run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds, **resume_kwargs)
     elif args.reddit_only:
-        reddit_result = await run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds)
+        reddit_result = await run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds, **resume_kwargs)
     else:
         # 并行运行（每个平台使用独立的日志记录器）
         results = await asyncio.gather(
-            run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds),
-            run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds),
+            run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds, **resume_kwargs),
+            run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds, **resume_kwargs),
         )
         twitter_result, reddit_result = results
     

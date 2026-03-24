@@ -161,9 +161,10 @@ const handleNextStep = (params = {}) => {
     params: { simulationId: currentSimulationId.value }
   }
   
-  // 如果有自定义轮数，通过 query 参数传递
-  if (params.maxRounds) {
-    routeParams.query = { maxRounds: params.maxRounds }
+  // 通过 query 参数传递配置
+  routeParams.query = {
+    ...(params.maxRounds ? { maxRounds: params.maxRounds } : {}),
+    ...(params.simulationMode ? { simulationMode: params.simulationMode } : {})
   }
   
   // 跳转到 Step 3 页面

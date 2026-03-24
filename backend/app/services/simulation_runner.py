@@ -315,7 +315,10 @@ class SimulationRunner:
         platform: str = "parallel",  # twitter / reddit / parallel
         max_rounds: int = None,  # 最大模拟轮数（可选，用于截断过长的模拟）
         enable_graph_memory_update: bool = False,  # 是否将活动更新到Zep图谱
-        graph_id: str = None  # Zep图谱ID（启用图谱更新时必需）
+        graph_id: str = None,  # Zep图谱ID（启用図谱更新時必需）
+        resume: bool = False,  # 既存データを保持して再開するか
+        resume_round: int = None,  # 再開するラウンド番号（省略時は自動検出）
+        simulation_mode: str = 'swarm',  # swarm: 各エージェント独立 / director: 1回のLLM呼び出しで全員分決定
     ) -> SimulationRunState:
         """
         启动模拟
@@ -421,10 +424,21 @@ class SimulationRunner:
             # 如果指定了最大轮数，添加到命令行参数
             if max_rounds is not None and max_rounds > 0:
                 cmd.extend(["--max-rounds", str(max_rounds)])
+
+            # Resume mode: keep existing DB and skip completed rounds
+            if resume:
+                cmd.append("--resume")
+                if resume_round is not None:
+                    cmd.extend(["--resume-round", str(resume_round)])
+
+            # Simulation mode: director uses single LLM call for all agents
+            if simulation_mode and simulation_mode != 'swarm':
+                cmd.extend(["--simulation-mode", simulation_mode])
             
             # 创建主日志文件，避免 stdout/stderr 管道缓冲区满导致进程阻塞
             main_log_path = os.path.join(sim_dir, "simulation.log")
-            main_log_file = open(main_log_path, 'w', encoding='utf-8')
+            log_mode = 'a' if resume else 'w'
+            main_log_file = open(main_log_path, log_mode, encoding='utf-8')
             
             # 设置子进程环境变量，确保 Windows 上使用 UTF-8 编码
             # 这可以修复第三方库（如 OASIS）读取文件时未指定编码的问题

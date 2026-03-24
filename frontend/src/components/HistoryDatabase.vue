@@ -169,8 +169,17 @@
                 <span class="btn-icon">◈</span>
                 <span class="btn-text">環境構築</span>
               </button>
-              <button 
-                class="modal-btn btn-report" 
+              <button
+                class="modal-btn btn-resume"
+                @click="goToResume"
+                :disabled="!selectedProject.simulation_id"
+              >
+                <span class="btn-step">Step3</span>
+                <span class="btn-icon">▶</span>
+                <span class="btn-text">前回データをロード</span>
+              </button>
+              <button
+                class="modal-btn btn-report"
                 @click="goToReport"
                 :disabled="!selectedProject.report_id"
               >
@@ -181,7 +190,7 @@
             </div>
             <!-- 不可回放提示 -->
             <div class="modal-playback-hint">
-              <span class="hint-text">Step3「シミュレーション開始」とStep5「深層インタラクション」は実行中に起動する必要があり、履歴再生には対応していません</span>
+              <span class="hint-text">Step5「深層インタラクション」は実行中に起動する必要があり、履歴再生には対応していません</span>
             </div>
           </div>
         </div>
@@ -418,6 +427,18 @@ const goToSimulation = () => {
     router.push({
       name: 'Simulation',
       params: { simulationId: selectedProject.value.simulation_id }
+    })
+    closeModal()
+  }
+}
+
+// 导航到シミュレーション再開页面（Step3 Resume）
+const goToResume = () => {
+  if (selectedProject.value?.simulation_id) {
+    router.push({
+      name: 'SimulationRun',
+      params: { simulationId: selectedProject.value.simulation_id },
+      query: { resume: 'true' }
     })
     closeModal()
   }
@@ -1314,6 +1335,7 @@ onUnmounted(() => {
 
 .modal-btn.btn-project .btn-icon { color: #3B82F6; }
 .modal-btn.btn-simulation .btn-icon { color: #F59E0B; }
+.modal-btn.btn-resume .btn-icon { color: #F97316; }
 .modal-btn.btn-report .btn-icon { color: #10B981; }
 
 .modal-btn:hover:not(:disabled) .btn-text {

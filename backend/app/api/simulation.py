@@ -1498,6 +1498,9 @@ def start_simulation():
         max_rounds = data.get('max_rounds')  # 可选：最大模拟轮数
         enable_graph_memory_update = data.get('enable_graph_memory_update', False)  # 可选：是否启用图谱记忆更新
         force = data.get('force', False)  # 可选：强制重新开始
+        resume = data.get('resume', False)  # 可選：既存データを保持して再開
+        resume_round = data.get('resume_round')  # 可選：再開するラウンド番号
+        simulation_mode = data.get('simulation_mode', 'swarm')  # 可選：swarm / director
 
         # 验证 max_rounds 参数
         if max_rounds is not None:
@@ -1518,6 +1521,12 @@ def start_simulation():
             return jsonify({
                 "success": False,
                 "error": f"無効なプラットフォームタイプ: {platform}、利用可能: twitter/reddit/parallel"
+            }), 400
+
+        if simulation_mode not in ('swarm', 'director'):
+            return jsonify({
+                "success": False,
+                "error": f"無効なシミュレーションモード: {simulation_mode}、利用可能: swarm/director"
             }), 400
 
         # 检查模拟是否已准备好
@@ -1557,8 +1566,8 @@ def start_simulation():
                                 "error": f"シミュレーションは実行中です。先に /stop APIで停止するか、force=true で強制再起動してください"
                             }), 400
 
-                # 如果是强制模式，清理运行日志
-                if force:
+                # 如果是强制模式且非resume，清理运行日志
+                if force and not resume:
                     logger.info(f"强制模式：清理模拟日志 {simulation_id}")
                     cleanup_result = SimulationRunner.cleanup_simulation_logs(simulation_id)
                     if not cleanup_result.get("success"):
@@ -1601,7 +1610,10 @@ def start_simulation():
             platform=platform,
             max_rounds=max_rounds,
             enable_graph_memory_update=enable_graph_memory_update,
-            graph_id=graph_id
+            graph_id=graph_id,
+            resume=resume,
+            resume_round=resume_round,
+            simulation_mode=simulation_mode,
         )
         
         # 更新模拟状态
@@ -1613,6 +1625,8 @@ def start_simulation():
             response_data['max_rounds_applied'] = max_rounds
         response_data['graph_memory_update_enabled'] = enable_graph_memory_update
         response_data['force_restarted'] = force_restarted
+        response_data['resumed'] = resume
+        response_data['simulation_mode'] = simulation_mode
         if enable_graph_memory_update:
             response_data['graph_id'] = graph_id
         
